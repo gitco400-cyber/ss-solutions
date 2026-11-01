@@ -33,7 +33,7 @@ The public website works without Supabase, using its built-in content and the su
    ```
 
    These values are intended for the browser. Never put a Supabase `service_role` key in this project, GitHub variables, or any `VITE_*` setting.
-7. In the GitHub repository's **Settings → Secrets and variables → Actions → Variables**, define `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` for the Pages build. The deployment workflow reads these optional public configuration variables. If they are absent, the website still builds; the dashboard and database form remain unavailable and say so.
+7. In the GitHub repository's **Settings → Secrets and variables → Actions → Variables**, define `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` for the Pages build. The deployment workflow reads these public configuration variables and stops with an explicit error if either is missing, preventing a deployment that silently shows only demo content. Local builds can still run without Supabase; the website keeps its built-in demo content when a configured Supabase connection genuinely fails.
 8. Check the Supabase Auth URL configuration allows the deployed site origin: `https://gitco200-cyber.github.io/ss-solutions/`.
 
 The SQL file is intended for a new project and should be applied once. If you have existing production tables or policies, review and adapt the SQL before applying it.
