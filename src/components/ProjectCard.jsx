@@ -28,11 +28,13 @@ function ProjectVisual({ type }) {
   )
 }
 
-function ProjectCard({ number, title, category, description, type, tags, index }) {
+function ProjectCard({ number, title, category, description, type, tags = [], image_url: imageUrl, is_demo: isDemo = true, index }) {
   return (
     <Reveal className="project-card" delay={index * 0.08}>
-      <ProjectVisual type={type} />
-      <div className="project-meta"><span>{number} / {category}</span><span className="demo-tag">DEMO CONCEPT</span></div>
+      {imageUrl
+        ? <div className="project-visual project-image"><img alt={`${title} project preview`} loading="lazy" src={imageUrl} /></div>
+        : <ProjectVisual type={type} />}
+      <div className="project-meta"><span>{number} / {category}</span>{isDemo && <span className="demo-tag">DEMO CONCEPT</span>}</div>
       <div className="project-info">
         <div><h3>{title}</h3><p>{description}</p></div>
         <span aria-hidden="true" className="project-link"><ArrowUpRight size={17} /></span>

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   ArrowDown,
   ArrowRight,
@@ -6,6 +6,7 @@ import {
   Blocks,
   Code2,
   Cpu,
+  Gauge,
   Globe2,
   LayoutDashboard,
   LifeBuoy,
@@ -13,7 +14,6 @@ import {
   PenTool,
   ShieldCheck,
   Sparkles,
-  Wrench,
 } from 'lucide-react'
 import { motion, useReducedMotion } from 'motion/react'
 import { siteConfig } from './config/site.js'
@@ -23,21 +23,28 @@ import ProjectCard from './components/ProjectCard.jsx'
 import Reveal from './components/Reveal.jsx'
 import SectionHeading from './components/SectionHeading.jsx'
 import ServiceCard from './components/ServiceCard.jsx'
+import SocialLinks from './components/SocialLinks.jsx'
+import { getDefaultSocialLinks } from './lib/social.js'
+import { isSupabaseConfigured, supabase } from './lib/supabase.js'
 import './App.css'
 
+const serviceIcons = { Code2, Cpu, Gauge, LayoutDashboard, LifeBuoy, Megaphone, PenTool }
+
 const services = [
-  { icon: Code2, title: 'Web Development', description: 'Fast, responsive websites and web applications built around the way your business works.' },
-  { icon: Cpu, title: 'Software Solutions', description: 'Practical, purpose-built software that simplifies tasks and supports your next stage of growth.' },
-  { icon: LifeBuoy, title: 'IT Support', description: 'Dependable technical guidance to help your systems stay secure, stable, and productive.' },
-  { icon: LayoutDashboard, title: 'UI/UX Design', description: 'Thoughtful digital experiences that make complex products feel clear and natural to use.' },
-  { icon: PenTool, title: 'Graphic Design', description: 'Cohesive visual assets that help your brand show up with confidence across every touchpoint.' },
-  { icon: Wrench, title: 'Computer Repair', description: 'Careful diagnostics and repair support to get your computers back to doing their best work.' },
-  { icon: Megaphone, title: 'Digital Marketing', description: 'Digital campaigns and content shaped to connect your business with the right audience.' },
+  { icon: 'Code2', title: 'Web Development', description: 'Fast, responsive websites and web applications built around the way your business works.' },
+  { icon: 'Cpu', title: 'Software Solutions', description: 'Practical, purpose-built software that simplifies tasks and supports your next stage of growth.' },
+  { icon: 'LifeBuoy', title: 'IT Support', description: 'Dependable technical guidance to help your systems stay secure, stable, and productive.' },
+  { icon: 'Gauge', title: 'PC Optimization', description: 'Windows performance and startup optimization, system cleanup, software and system troubleshooting, gaming performance optimization, and Windows configuration and maintenance.' },
+  { icon: 'LayoutDashboard', title: 'UI/UX Design', description: 'Thoughtful digital experiences that make complex products feel clear and natural to use.' },
+  { icon: 'PenTool', title: 'Graphic Design', description: 'Cohesive visual assets that help your brand show up with confidence across every touchpoint.' },
+  { icon: 'Megaphone', title: 'Digital Marketing', description: 'Digital campaigns and content shaped to connect your business with the right audience.' },
 ]
 
 const projects = [
   {
     number: '01',
+    id: 'orbit-commerce',
+    is_demo: true,
     title: 'Orbit Commerce',
     category: 'E-commerce concept',
     description: 'A refined storefront concept focused on product discovery, a calm shopping flow, and a mobile-first experience.',
@@ -46,6 +53,8 @@ const projects = [
   },
   {
     number: '02',
+    id: 'northstar-insights',
+    is_demo: true,
     title: 'Northstar Insights',
     category: 'Analytics dashboard concept',
     description: 'A clear, data-led dashboard concept that turns business metrics into a more approachable daily view.',
@@ -54,6 +63,8 @@ const projects = [
   },
   {
     number: '03',
+    id: 'forma-studio',
+    is_demo: true,
     title: 'Forma Studio',
     category: 'Creative portfolio concept',
     description: 'A distinctive portfolio concept combining expressive art direction with a simple, considered browsing experience.',
@@ -61,6 +72,16 @@ const projects = [
     tags: ['Branding', 'Web design'],
   },
 ]
+
+const defaultContent = {
+  hero_heading: 'Technology that takes your business further.',
+  hero_description: siteConfig.tagline,
+  about_heading: 'Good technology should make the next step feel possible.',
+  about_paragraph_1: 'SS Solutions brings software development and digital services together to help businesses work smarter, communicate clearly, and keep moving forward.',
+  about_paragraph_2: 'Whether you need a new digital experience, a tailored software solution, or reliable technical support, we focus on making the process straightforward and the result genuinely useful.',
+  footer_tagline: siteConfig.tagline,
+  cta_text: 'Start a conversation',
+}
 
 const benefits = [
   { icon: Sparkles, title: 'Built around your goals', description: 'We start by understanding your priorities, then shape a solution that makes sense for your business.' },
@@ -75,35 +96,39 @@ const process = [
   { number: '04', title: 'Support', description: 'We help you launch with confidence and stay available as your needs evolve.' },
 ]
 
-function ContactForm() {
+function ContactForm({ serviceList }) {
   const [formState, setFormState] = useState('idle')
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault()
-    const formData = new FormData(event.currentTarget)
-    const message = [
-      `Hello ${siteConfig.name},`,
-      '',
-      `I'm ${formData.get('name')}.`,
-      `My email: ${formData.get('email')}`,
-      `I'm interested in: ${formData.get('service')}`,
-      '',
-      formData.get('message'),
-    ].join('\n')
+    const form = event.currentTarget
+    const formData = new FormData(form)
 
-    if (siteConfig.whatsappNumber) {
-      window.open(`https://wa.me/${siteConfig.whatsappNumber}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer')
-      setFormState('opened')
+    if (formData.get('website')) {
+      setFormState('error')
       return
     }
 
-    if (siteConfig.contactEmail) {
-      window.location.href = `mailto:${siteConfig.contactEmail}?subject=${encodeURIComponent(`Website enquiry from ${formData.get('name')}`)}&body=${encodeURIComponent(message)}`
-      setFormState('opened')
+    if (!isSupabaseConfigured || !supabase) {
+      setFormState('unconfigured')
       return
     }
 
-    setFormState('unconfigured')
+    setFormState('submitting')
+    try {
+      const { error } = await supabase.from('inquiries').insert({
+        name: formData.get('name'),
+        email: formData.get('email'),
+        phone: formData.get('phone') || null,
+        service: formData.get('service'),
+        message: formData.get('message'),
+      })
+      if (error) throw error
+      form.reset()
+      setFormState('success')
+    } catch {
+      setFormState('error')
+    }
   }
 
   return (
@@ -119,23 +144,32 @@ function ContactForm() {
         </label>
       </div>
       <label>
+        <span>Phone number <small>(optional)</small></span>
+        <input autoComplete="tel" name="phone" type="tel" pattern="[+()0-9 .-]{7,40}" placeholder="+94 77 598 4372" />
+      </label>
+      <label>
         <span>What can we help with?</span>
         <select name="service" defaultValue="" required>
           <option value="" disabled>Select a service</option>
-          {services.map((service) => <option key={service.title}>{service.title}</option>)}
+          {serviceList.map((service) => <option key={service.title}>{service.title}</option>)}
           <option>Something else</option>
         </select>
+      </label>
+      <label aria-hidden="true" className="honeypot">
+        <span>Leave this field empty</span>
+        <input autoComplete="off" name="website" tabIndex="-1" />
       </label>
       <label>
         <span>A little about your project</span>
         <textarea name="message" rows="4" placeholder="Tell us what you have in mind..." required />
       </label>
-      <button className="button button-primary form-submit" type="submit">
-        Send an enquiry <ArrowUpRight size={17} aria-hidden="true" />
+      <button className="button button-primary form-submit" disabled={formState === 'submitting'} type="submit">
+        {formState === 'submitting' ? 'Sending…' : 'Send an enquiry'} <ArrowUpRight size={17} aria-hidden="true" />
       </button>
-      <p className="form-note" aria-live="polite">
-        {formState === 'opened' && 'Your message is ready in your selected contact app. Complete the send there to reach us.'}
-        {formState === 'unconfigured' && 'Contact is not configured yet. Add VITE_WHATSAPP_NUMBER or VITE_CONTACT_EMAIL to the app environment to enable sending.'}
+      <p className={`form-note${formState === 'error' || formState === 'unconfigured' ? ' is-error' : ''}`} aria-live="polite" role={formState === 'error' || formState === 'unconfigured' ? 'alert' : 'status'}>
+        {formState === 'success' && 'Thanks — your enquiry was submitted. We’ll be in touch.'}
+        {formState === 'error' && 'Your enquiry could not be submitted. Please try again or contact us directly.'}
+        {formState === 'unconfigured' && 'Online enquiries are not configured yet. Contact us directly using the links beside this form.'}
         {formState === 'idle' && 'Your details will be used only to respond to your enquiry.'}
       </p>
     </form>
@@ -144,6 +178,54 @@ function ContactForm() {
 
 function App() {
   const reduceMotion = useReducedMotion()
+  const [publicServices, setPublicServices] = useState(() => services.map((service) => ({
+    ...service,
+    icon: serviceIcons[service.icon] ?? Code2,
+  })))
+  const [publicProjects, setPublicProjects] = useState(projects)
+  const [socialLinks, setSocialLinks] = useState(() => getDefaultSocialLinks(siteConfig))
+  const [content, setContent] = useState(defaultContent)
+  const [seo, setSeo] = useState({ title: 'SS Solutions — Software & Digital', description: siteConfig.tagline })
+  const [contentError, setContentError] = useState('')
+
+  useEffect(() => {
+    if (!isSupabaseConfigured || !supabase) return
+
+    async function loadPublicContent() {
+      const results = await Promise.all([
+        supabase.from('services').select('*').eq('is_active', true).order('sort_order'),
+        supabase.from('projects').select('*').eq('is_published', true).order('sort_order'),
+        supabase.from('social_links').select('*').eq('enabled', true).order('sort_order'),
+        supabase.from('site_settings').select('value').eq('key', 'site_content').maybeSingle(),
+        supabase.from('site_settings').select('value').eq('key', 'seo').maybeSingle(),
+      ])
+      const failedResult = results.find((result) => result.error)
+      if (failedResult?.error) throw failedResult.error
+
+      const [serviceResult, projectResult, socialResult, contentResult, seoResult] = results
+      setPublicServices(serviceResult.data.map((service) => ({ ...service, icon: serviceIcons[service.icon] ?? Code2 })))
+      setPublicProjects(projectResult.data.map((project, index) => ({
+        ...project,
+        number: String(index + 1).padStart(2, '0'),
+      })))
+      setSocialLinks(socialResult.data)
+      if (contentResult.data?.value) setContent((current) => ({ ...current, ...contentResult.data.value }))
+      if (seoResult.data?.value) setSeo((current) => ({ ...current, ...seoResult.data.value }))
+    }
+
+    loadPublicContent()
+      .then(() => setContentError(''))
+      .catch(() => setContentError('Live website content could not be loaded. Showing the built-in content instead.'))
+  }, [])
+
+  useEffect(() => {
+    document.title = seo.title
+    document.querySelector('meta[name="description"]')?.setAttribute('content', seo.description)
+    document.querySelector('meta[property="og:title"]')?.setAttribute('content', seo.title)
+    document.querySelector('meta[property="og:description"]')?.setAttribute('content', seo.description)
+  }, [seo])
+
+  const whatsapp = socialLinks.find((link) => link.enabled && link.platform.toLowerCase() === 'whatsapp')
 
   return (
     <>
@@ -154,10 +236,10 @@ function App() {
           <div className="hero-copy">
             <Reveal>
               <p className="eyebrow"><span className="status-dot" /> Digital ideas, thoughtfully delivered</p>
-              <h1>Technology that takes your business <span className="gradient-text">further.</span></h1>
-              <p className="hero-description">{siteConfig.tagline}</p>
+              <h1>{content.hero_heading}</h1>
+              <p className="hero-description">{content.hero_description}</p>
               <div className="hero-actions">
-                <a className="button button-primary" href="#contact">Start a conversation <ArrowUpRight size={17} aria-hidden="true" /></a>
+                <a className="button button-primary" href="#contact">{content.cta_text} <ArrowUpRight size={17} aria-hidden="true" /></a>
                 <a className="button button-quiet" href="#services">Explore what we do <ArrowDown size={16} aria-hidden="true" /></a>
               </div>
               <div className="hero-note"><span className="note-line" /> A thoughtful partner for your next digital step</div>
@@ -191,10 +273,10 @@ function App() {
         <section className="about section-wrap section-space" id="about">
           <div className="about-label"><span className="eyebrow">01 / About us</span></div>
           <Reveal className="about-content">
-            <h2>Good technology should make the next step <span className="muted-text">feel possible.</span></h2>
+            <h2>{content.about_heading}</h2>
             <div className="about-detail">
-              <p>SS Solutions brings software development and digital services together to help businesses work smarter, communicate clearly, and keep moving forward.</p>
-              <p>Whether you need a new digital experience, a tailored software solution, or reliable technical support, we focus on making the process straightforward and the result genuinely useful.</p>
+              <p>{content.about_paragraph_1}</p>
+              <p>{content.about_paragraph_2}</p>
               <a className="text-link" href="#services">Get to know our services <ArrowRight size={16} /></a>
             </div>
           </Reveal>
@@ -203,7 +285,7 @@ function App() {
         <section className="services-section section-wrap section-space" id="services">
           <SectionHeading eyebrow="02 / What we do" title={<>Everything digital, <span className="gradient-text">under one roof.</span></>} description="A flexible range of technology, creative, and support services to meet your business where it is today—and where it wants to go." />
           <div className="services-grid">
-            {services.map((service, index) => <ServiceCard key={service.title} {...service} index={index} />)}
+            {publicServices.map((service, index) => <ServiceCard key={service.id ?? service.title} {...service} index={index} />)}
           </div>
         </section>
 
@@ -211,12 +293,14 @@ function App() {
           <SectionHeading
             eyebrow="03 / Selected concepts"
             title={<>A glimpse of what <span className="gradient-text">we can create.</span></>}
-            description="These are demonstration projects created to illustrate our approach and capabilities. They are concepts—not real client projects."
+            description={publicProjects.length > 0 && publicProjects.every((project) => project.is_demo)
+              ? 'These are demonstration projects created to illustrate our approach and capabilities. They are concepts—not real client projects.'
+              : 'Selected SS Solutions projects and demonstration concepts.'}
           />
           <div className="projects-grid">
-            {projects.map((project, index) => <ProjectCard key={project.number} {...project} index={index} />)}
+            {publicProjects.map((project, index) => <ProjectCard key={project.id ?? project.number} {...project} index={index} />)}
           </div>
-          <p className="demo-disclaimer"><Sparkles size={14} aria-hidden="true" /> Demonstration concepts only · Not commissioned client work</p>
+          {publicProjects.some((project) => project.is_demo) && <p className="demo-disclaimer"><Sparkles size={14} aria-hidden="true" /> Demonstration concepts are not commissioned client work</p>}
         </section>
 
         <section className="why-section section-wrap section-space" id="why-us">
@@ -258,17 +342,15 @@ function App() {
               <h2>Have something in mind? <span className="gradient-text">Let’s talk.</span></h2>
               <p>Tell us what you’re working on, what’s getting in the way, or where you’d like to go next. We’ll take it from there.</p>
               <div className="contact-promise"><span className="status-dot" /> A real conversation. A thoughtful next step.</div>
-              {siteConfig.whatsappNumber && (
-                <a className="whatsapp-link" href={`https://wa.me/${siteConfig.whatsappNumber}`} target="_blank" rel="noreferrer">
-                  Prefer WhatsApp? Start a chat <ArrowUpRight size={15} />
-                </a>
-              )}
+              <SocialLinks className="contact-social-links" links={socialLinks} />
+              {contentError && <p className="public-content-error" role="status">{contentError}</p>}
             </div>
-            <ContactForm />
+            <ContactForm serviceList={publicServices} />
           </div>
         </section>
       </main>
-      <Footer />
+      <Footer socialLinks={socialLinks} tagline={content.footer_tagline} />
+      {whatsapp && <SocialLinks className="floating-whatsapp" links={[whatsapp]} />}
     </>
   )
 }

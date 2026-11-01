@@ -9,7 +9,7 @@
   --subtle: #66716e;
   --teal: #4bdbbd;
   --orange: #ff9a62;
-  --content-width: 1160px;
+  --content-width: 1360px;
 }
 
 #root { overflow: clip; }
@@ -22,9 +22,10 @@
 .skip-link:focus { transform: translateY(0); }
 
 .site-header { position: fixed; inset: 14px 0 auto; z-index: 20; pointer-events: none; }
-.nav-shell { width: min(calc(100% - 48px), 1260px); height: 82px; margin-inline: auto; padding: 0 22px; display: flex; align-items: center; justify-content: space-between; border: 1px solid rgba(255,255,255,.09); border-radius: 17px; background: rgba(14, 17, 18, .77); box-shadow: 0 14px 45px rgba(0,0,0,.2); backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px); pointer-events: auto; }
+.nav-shell { width: min(calc(100% - 48px), 1400px); height: 82px; margin-inline: auto; padding: 0 22px; display: flex; align-items: center; justify-content: space-between; border: 1px solid rgba(255,255,255,.09); border-radius: 17px; background: rgba(14, 17, 18, .77); box-shadow: 0 14px 45px rgba(0,0,0,.2); backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px); pointer-events: auto; }
 .brand { display: inline-flex; align-items: center; gap: 10px; min-width: max-content; color: var(--text); text-decoration: none; }
 .site-header .brand-logo { display: block; flex: 0 0 auto; width: auto; height: 65px; object-fit: contain; }
+.site-footer .brand-logo { display: block; flex: 0 0 auto; width: 52px; height: 52px; object-fit: contain; }
 .brand-name { display: flex; flex-direction: column; gap: 3px; font-size: 14px; font-weight: 650; letter-spacing: -.03em; line-height: 1; }
 .brand-name small { color: var(--subtle); font-size: 7px; font-weight: 600; letter-spacing: .13em; }
 .main-nav { display: flex; align-items: center; gap: 30px; }
@@ -102,6 +103,7 @@
 .projects-grid { display: grid; grid-template-columns: repeat(3, 1fr); align-items: start; gap: 19px; }
 .project-card { min-width: 0; }
 .project-visual { position: relative; height: 235px; overflow: hidden; border: 1px solid rgba(255,255,255,.1); border-radius: 12px; transition: border-color .25s ease; }
+.project-image img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .project-card:hover .project-visual { border-color: rgba(75,219,189,.28); }
 .commerce-visual { padding: 15px; color: #302f2b; background: #e9e5d9; }
 .mock-browser { height: 21px; display: flex; align-items: center; gap: 4px; border-bottom: 1px solid rgba(40,40,30,.13); }
@@ -182,6 +184,19 @@
 .contact-copy > p { max-width: 370px; margin: 19px 0 0; color: #929c99; font-size: 12px; line-height: 1.8; }
 .contact-promise { display: flex; align-items: center; gap: 10px; margin-top: 31px; color: #a2aca8; font-size: 10px; }
 .whatsapp-link { display: inline-flex; align-items: center; gap: 7px; margin-top: 19px; color: var(--teal); font-size: 10px; text-decoration: none; }
+.social-links { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; }
+.social-links a { display: inline-flex; align-items: center; gap: 8px; color: #aab4b0; text-decoration: none; transition: color .2s ease, border-color .2s ease, background .2s ease; }
+.social-links a:hover { color: var(--teal); }
+.contact-social-links { margin-top: 22px; }
+.contact-social-links a { min-height: 36px; padding: 0 11px; border: 1px solid var(--line); border-radius: 9px; font-size: 10px; }
+.contact-social-links a:hover { border-color: rgba(75,219,189,.35); background: rgba(75,219,189,.05); }
+.footer-social-links { align-items: flex-start; flex-direction: column; gap: 12px; }
+.footer-social-links a { font-size: 10px; }
+.floating-whatsapp { position: fixed; right: 24px; bottom: 24px; z-index: 18; }
+.floating-whatsapp a { min-height: 48px; padding: 0 16px; border: 1px solid rgba(75,219,189,.28); border-radius: 99px; color: #07110e; background: linear-gradient(110deg, #5ce1c4, #a4ead9); box-shadow: 0 10px 32px rgba(0,0,0,.3); font-size: 11px; font-weight: 650; }
+.floating-whatsapp a:hover { color: #07110e; background: linear-gradient(110deg, #7be8d0, #c0f1e5); }
+.public-content-error { margin-top: 18px; color: #ffb39e; font-size: 10px; line-height: 1.6; }
+.honeypot { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
 .contact-form { display: flex; flex-direction: column; gap: 16px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .contact-form label { display: flex; flex-direction: column; gap: 8px; }
@@ -193,7 +208,9 @@
 .contact-form textarea { min-height: 101px; resize: vertical; }
 .contact-form input:focus,.contact-form select:focus,.contact-form textarea:focus { border-color: rgba(75,219,189,.65); background: rgba(4,7,7,.56); }
 .form-submit { min-height: 44px; align-self: flex-start; border: 0; cursor: pointer; }
+.form-submit:disabled { cursor: wait; opacity: .7; }
 .form-note { min-height: 15px; margin: -7px 0 0; color: #77827e; font-size: 9px; line-height: 1.55; }
+.form-note.is-error { color: #ffb39e; }
 
 .site-footer { border-top: 1px solid var(--line); }
 .footer-main { position: relative; display: flex; justify-content: space-between; gap: 60px; padding-top: 42px; padding-bottom: 40px; }
@@ -237,6 +254,7 @@
   .site-header { inset-block-start: 10px; }
   .nav-shell { width: calc(100% - 24px); height: 68px; padding-inline: 15px; border-radius: 14px; }
   .site-header .brand-logo { height: 52px; }
+  .site-footer .brand-logo { width: 46px; height: 46px; }
   .menu-toggle { display: grid; width: 38px; height: 38px; place-items: center; border: 1px solid var(--line); border-radius: 9px; color: var(--text); background: rgba(255,255,255,.035); cursor: pointer; }
   .main-nav { position: absolute; top: 68px; right: 12px; left: 12px; display: none; align-items: stretch; gap: 0; padding: 9px; border: 1px solid var(--line-strong); border-radius: 13px; background: rgba(13,16,16,.97); box-shadow: 0 22px 50px rgba(0,0,0,.45); backdrop-filter: blur(22px); }
   .main-nav.is-open { display: flex; flex-direction: column; }
@@ -294,6 +312,9 @@
   .footer-main { flex-wrap: wrap; gap: 30px; padding-top: 33px; }
   .footer-links { gap: 45px; margin-right: 50px; }
   .footer-bottom { font-size: 8px; }
+  .floating-whatsapp { right: 16px; bottom: 16px; }
+  .floating-whatsapp a { width: 50px; min-height: 50px; justify-content: center; padding: 0; }
+  .floating-whatsapp a span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
 }
 
 @media (max-width: 380px) {
