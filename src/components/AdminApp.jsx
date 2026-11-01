@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertCircle,
   ArrowLeft,
   BriefcaseBusiness,
+  ChartNoAxesCombined,
   CheckCircle2,
   Eye,
   FileText,
@@ -25,11 +26,14 @@ import { notifyPublicSiteChanged } from '../lib/publicSiteSync.js'
 import { isSupabaseConfigured, supabase } from '../lib/supabase.js'
 import './admin.css'
 
+const VisitorAnalytics = lazy(() => import('./VisitorAnalytics.jsx'))
+
 const sections = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
   { id: 'content', label: 'Website Content', icon: FileText },
   { id: 'services', label: 'Services', icon: Settings },
   { id: 'projects', label: 'Projects', icon: BriefcaseBusiness },
+  { id: 'visitor-analytics', label: 'Visitor Analytics', icon: ChartNoAxesCombined },
   { id: 'inquiries', label: 'Inquiries', icon: Inbox },
   { id: 'social', label: 'Social & Contact', icon: Link2 },
   { id: 'seo', label: 'SEO Settings', icon: Eye },
@@ -577,6 +581,11 @@ function AdminApp() {
                 onDelete={(record) => deleteRecord('projects', record.id, record.title, record.image_url)}
                 operationMessage={projectOperationMessage}
               />
+            )}
+            {section === 'visitor-analytics' && (
+              <Suspense fallback={<div className="admin-loading inline">Loading visitor analytics…</div>}>
+                <VisitorAnalytics />
+              </Suspense>
             )}
             {section === 'inquiries' && (
               <Inquiries
