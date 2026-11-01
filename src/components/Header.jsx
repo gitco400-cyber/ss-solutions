@@ -20,7 +20,7 @@ function Header() {
     <header className="site-header">
       <div className="nav-shell">
         <a aria-label={`${siteConfig.name} home`} className="brand" href="#home" onClick={closeMenu}>
-          <img alt="" className="brand-logo" src="/logo.png" />
+          <img alt="" className="brand-logo" src={`${import.meta.env.BASE_URL}logo.png`} />
           <span className="brand-name">{siteConfig.name}<small>SOFTWARE & DIGITAL</small></span>
         </a>
         <button

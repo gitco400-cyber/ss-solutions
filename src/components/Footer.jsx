@@ -7,7 +7,7 @@ function Footer() {
       <div className="footer-main section-wrap">
         <div className="footer-brand">
           <a className="brand" href="#home" aria-label={`${siteConfig.name} home`}>
-            <img alt="" className="brand-logo" src="/logo.png" />
+            <img alt="" className="brand-logo" src={`${import.meta.env.BASE_URL}logo.png`} />
             <span className="brand-name">{siteConfig.name}<small>SOFTWARE & DIGITAL</small></span>
           </a>
           <p>{siteConfig.tagline}</p>

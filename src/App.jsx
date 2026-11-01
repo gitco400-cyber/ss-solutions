@@ -176,7 +176,7 @@ function App() {
             <div className="hero-glass-card">
               <div className="glass-card-top"><span className="window-dots"><i /><i /><i /></span><span>SS / DIGITAL STUDIO</span><span className="card-top-mark">↗</span></div>
               <div className="hero-mark">
-                <img src="/logo.png" alt="" />
+                <img src={`${import.meta.env.BASE_URL}logo.png`} alt="" />
               </div>
               <div className="hero-art-title">Ideas into <span>impact.</span></div>
               <div className="hero-art-rule" />
