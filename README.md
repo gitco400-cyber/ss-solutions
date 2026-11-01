@@ -50,7 +50,7 @@ The public website defaults to its dark theme and includes a navbar theme toggle
 
 ## Visitor Analytics setup
 
-The public website records each page load through the `visitor-analytics` Supabase Edge Function with a separate visit ID, while retaining random visitor and session IDs. It collects only page paths, visit timestamps, device category, available operating-system/browser details, screen and viewport dimensions, device pixel ratio, browser language, and a device model only when the browser supplies one. Unknown details remain `Unknown`. It does not request geolocation, collect referrers or time zones, or store precise location or IP addresses. The trusted gateway IP is used transiently to compute an HMAC rate-limit key; the raw IP is not stored or logged.
+The public website records each page load through the `visitor-analytics` Supabase Edge Function with a separate visit ID, while retaining a generated anonymous visitor ID and session ID. It collects the page path, referrer without query parameters, basic device/browser details, screen size, language, and time zone. It does not collect contact form data, authentication information, full IP addresses, or inferred IP locations. Device model and brand are stored as unavailable/unknown when browser APIs do not identify them reliably.
 
 ### Configuration and secrets
 
@@ -59,7 +59,7 @@ The browser build requires only these public configuration variable names:
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY` (a publishable key or legacy `anon` key)
 
-Set them in an ignored local `.env.local` for development and in the GitHub Pages build environment for production. The public key is expected to be present in frontend output; it must never be a service-role or secret key. Supabase provides `SUPABASE_URL` and `SUPABASE_SECRET_KEYS` to Edge Functions. The analytics function reads the `default` entry in `SUPABASE_SECRET_KEYS`, checks the format/role of a Supabase secret key or legacy service-role JWT, and rejects publishable and anon keys. `VISITOR_ANALYTICS_OWNERSHIP_SECRET` is a separate Edge Function secret. Never use a `VITE_` prefix for either server-side credential.
+Set them in an ignored local `.env.local` for development and in the GitHub Pages build environment for production. The public key is expected to be present in frontend output; it must never be a service-role or secret key. `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are Supabase-provided Edge Function environment variables. `VISITOR_ANALYTICS_OWNERSHIP_SECRET` is a separate Edge Function secret. Never use a `VITE_` prefix for either server-side credential.
 
 Generate a 32-byte cryptographically random ownership secret locally, save it to a temporary ignored env file, upload it to Supabase, and remove the local file. In PowerShell from the repository root:
 
@@ -69,11 +69,11 @@ supabase secrets set --env-file .supabase-secrets.local
 Remove-Item -Force .supabase-secrets.local
 ```
 
-The Edge Function accepts only a 32-byte hex or canonical base64url secret and rejects short, repeated, placeholder-like, and highly printable values. Do not copy the generated value into chat, source code, `.env`, GitHub Actions, or logs. Keep the same secret across deployments. Rotation invalidates existing browser ownership tokens; affected visitors must clear this site's local storage to obtain a new token.
+The Edge Function accepts only a 32-byte hex or canonical base64url secret and rejects short, repeated, placeholder-like, and highly printable values. Do not copy the generated value into chat, source code, `.env`, GitHub Actions, or logs. Keep the same secret across deployments. Rotation invalidates existing browser ownership tokens; affected visitors must clear this site's local storage to obtain a new token, and prior GPS records may need administrator cleanup. Plan a coordinated rotation and cleanup.
 
 ### Migration and deployment
 
-The analytics migrations depend on `public.admin_users` and the existing stable, `SECURITY DEFINER` `public.is_admin()` from [`supabase/schema.sql`](./supabase/schema.sql). Review migrations and the target schema first; do not rerun the initial schema on an existing project. The initial analytics migration creates the original analytics schema; the later device-only migration removes its location-specific schema. The device-only migration has a preflight that checks the expected table columns, RLS/grants, admin-only policies, helper functions, and conflicting objects before DDL. It adds nullable viewport dimensions without backfilling existing visit rows. It explicitly and irreversibly drops GPS coordinates, location consent/permission metadata, referrer and time-zone columns, and the short-lived GPS challenge table/function and any remaining challenge rows, while preserving all visitor analytics visit rows, IDs, timestamps, and device fields. It replaces the summary RPC with device-only counts and retains its admin authorization and grants. Review and back up the target before applying; do not run migrations against production without your own review and approval. The migration is wrapped in a PostgreSQL transaction, so DDL and function changes roll back together if the runner stops on an error.
+The analytics migration depends on `public.admin_users` and the existing stable, `SECURITY DEFINER` `public.is_admin()` from [`supabase/schema.sql`](./supabase/schema.sql). Review the migration and target schema first; do not rerun the initial schema on an existing project. Its read-only preflight checks run before migration DDL and check existing `visit_id` duplicates, invalid GPS tuples, NULLs in fields that will be constrained, required columns/types, indexes, policies, and triggers. If populated existing tables lack required migration fields or contain conflicts, the migration stops; it does not generate replacement IDs, backfill consent versions, delete visitor rows, or clear/modify GPS data. Review affected records and perform any explicitly approved remediation separately before retrying. It removes the legacy unique constraint on `(visitor_id, session_id)` so repeat visits can be recorded; it stops rather than removing an equivalent standalone unique index. Existing unexpected analytics policies also stop the migration for manual review rather than being silently removed. Back up the target first. The SQL file does not establish a transaction boundary, so do not assume every migration runner rolls back all earlier statements if a later statement fails; inspect applied objects and migration history before retrying.
 
 From the repository root, after review and explicit approval:
 
@@ -83,15 +83,17 @@ supabase db push
 supabase functions deploy visitor-analytics
 ```
 
-The function is configured with `verify_jwt = false` because visit ingestion is public. It accepts only initialization and device-only visit events, validates a strict payload allowlist, verifies visitor ownership with HMAC, and never returns stored analytics records. Supabase supplies `SUPABASE_URL` and `SUPABASE_SECRET_KEYS` to the Edge Function; only the function uses the `default` server-side credential.
+The function is configured with `verify_jwt = false` because visit ingestion is public. It validates an event-specific payload allowlist and never returns stored analytics records. Supabase supplies `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to the Edge Function; only the function uses the service-role key.
 
 Rate limiting reads only `cf-connecting-ip`, validates its IP syntax, hashes it with HMAC, and fails closed if absent or malformed. It does not trust `x-forwarded-for` or other client-controlled forwarding headers. This protection depends on the deployed Supabase gateway stripping/overwriting client-supplied `cf-connecting-ip` and supplying a trustworthy value. Repository inspection cannot verify that gateway behavior: confirm it with a controlled deployed test before treating the IP limit as an anti-abuse boundary. If the gateway cannot guarantee that header, this endpoint intentionally returns an error rather than falling back to visitor IDs, which callers can rotate.
 
-### Device-data privacy
+### Consent and location privacy
 
-The site never calls the browser geolocation API and has no location-consent UI, GPS challenge, coordinate storage, or map integration. The analytics payload contains no referrer, time zone, or IP address. Device brand remains `Unknown` because browsers do not reliably expose it; model remains `Unknown` unless the browser provides a model hint. Screen/viewport dimensions and language are browser-reported values and may be unavailable.
+Precise GPS is **never requested automatically**. A visitor must open **Location & privacy** and choose **Share My Location**. Declining does not affect site access. A visitor who revoked sharing must explicitly choose to share again; the server rotates the consent version and issues a new, short-lived, one-use challenge. Revocation clears coordinates, accuracy, and collection timestamp for all analytics rows belonging to the verified visitor, invalidates older challenges, and prevents stale tabs from restoring consent. The SQL constraint permits either a complete valid GPS tuple with granted/consented status or all GPS fields `NULL`.
 
-The browser-held ownership token is a bearer credential and remains vulnerable to same-origin script compromise or control of the visitor's browser. The Edge Function uses the gateway IP only to calculate a keyed, non-reversible rate-limit hash and fails closed if the trusted header is unavailable; repository inspection cannot prove the deployed gateway supplies a trustworthy header.
+The browser-held ownership token is a bearer credential and remains vulnerable to same-origin script compromise or control of the visitor's browser. A client-provided GPS coordinate cannot prove that the browser's real geolocation API produced it. A browser-level denial must be changed in browser settings before sharing can succeed.
+
+GPS coordinates are restricted to administrator-authorized dashboard queries. The details dialog does not load an external map automatically. If an administrator chooses **View map with OpenStreetMap**, the visitor's precise coordinates are sent to OpenStreetMap; do so only when appropriate under the site's privacy obligations.
 
 Analytics are not automatically deleted. The Admin Panel provides an explicit, confirmation-protected deletion for records older than 1–3650 days. Review retention according to applicable privacy requirements. The summary counts distinct visitor IDs within the selected date range.
 
@@ -105,7 +107,7 @@ deno test --no-lock supabase/functions/visitor-analytics/security_test.ts
 git diff --check
 ```
 
-For local end-to-end testing, use a local Supabase stack (`supabase start`) with a local-only function env file ignored by Git, then serve the function with `supabase functions serve visitor-analytics --env-file PATH_TO_LOCAL_FUNCTION_ENV`. Never use production secrets for local development. Apply/test migrations only against the local stack or a disposable staging project. The commands above are local checks only; they do not verify production database compatibility or Supabase gateway headers.
+For local end-to-end testing, use a local Supabase stack (`supabase start`) with a local-only function env file ignored by Git, then serve the function with `supabase functions serve visitor-analytics --env-file PATH_TO_LOCAL_FUNCTION_ENV`. Never use production secrets for local development. Apply/test migrations only against the local stack or a disposable staging project. The commands above are local checks only; they do not verify production database compatibility, Supabase gateway headers, or live GPS behavior.
 
 ## GitHub Pages
 

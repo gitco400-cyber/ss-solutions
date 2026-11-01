@@ -25,9 +25,9 @@ import Reveal from './components/Reveal.jsx'
 import SectionHeading from './components/SectionHeading.jsx'
 import ServiceCard from './components/ServiceCard.jsx'
 import SocialLinks from './components/SocialLinks.jsx'
+import VisitorLocation from './components/VisitorLocation.jsx'
 import { getDefaultSocialLinks } from './lib/social.js'
 import { fetchPublicSiteData, subscribeToPublicSiteChanges } from './lib/publicSiteSync.js'
-import { createVisitorRecord, submitVisitorEvent } from './lib/visitorAnalytics.js'
 import { isSupabaseConfigured, supabase } from './lib/supabase.js'
 import './App.css'
 
@@ -219,20 +219,6 @@ function App() {
     loaded: { services: false, projects: false, socialLinks: false, content: false, seo: false },
     savedSettings: { content: false, seo: false },
   })
-
-  useEffect(() => {
-    let active = true
-    createVisitorRecord()
-      .then(async (record) => {
-        if (!active || !record) return
-        const { error } = await submitVisitorEvent(record)
-        if (error) console.error('Visitor analytics could not record this visit.')
-      })
-      .catch(() => {
-        if (active) console.error('Visitor analytics could not initialize this visit.')
-      })
-    return () => { active = false }
-  }, [])
 
   useEffect(() => {
     let active = true
@@ -505,6 +491,7 @@ function App() {
       </main>
       <Footer socialLinks={socialLinks} tagline={content.footer_tagline} />
       {whatsapp && <SocialLinks className="floating-whatsapp" links={[whatsapp]} />}
+      <VisitorLocation />
     </>
   )
 }
