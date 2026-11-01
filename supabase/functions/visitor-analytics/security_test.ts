@@ -2,9 +2,93 @@ import {
   constantTimeEqual,
   decodeOwnershipSecret,
   getTrustedClientIp,
+  getSupabaseSecretKey,
   hmacHex,
   isValidClientIp,
+  toVisitRecord,
 } from './security.ts'
+
+Deno.test('accepts a secret-key default credential from SUPABASE_SECRET_KEYS', () => {
+  const suffix = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))))
+    .replaceAll('+', '-')
+    .replaceAll('/', '_')
+    .replaceAll('=', '')
+  const secretKey = `sb_secret_${suffix}`
+  if (getSupabaseSecretKey(JSON.stringify({ default: secretKey })) !== secretKey) {
+    throw new Error('Rejected a valid-format Supabase secret key.')
+  }
+})
+
+Deno.test('accepts a legacy service-role JWT in the default credential', () => {
+  const encode = (value: Record<string, string>) => btoa(JSON.stringify(value))
+    .replaceAll('+', '-')
+    .replaceAll('/', '_')
+    .replaceAll('=', '')
+  const legacyKey = `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode({ iss: 'supabase', role: 'service_role' })}.${'A'.repeat(32)}`
+  if (getSupabaseSecretKey(JSON.stringify({ default: legacyKey })) !== legacyKey) {
+    throw new Error('Rejected a legacy service-role JWT.')
+  }
+})
+
+Deno.test('rejects invalid credentials, malformed JSON, and a missing default key', () => {
+  const encode = (value: Record<string, string>) => btoa(JSON.stringify(value))
+    .replaceAll('+', '-')
+    .replaceAll('/', '_')
+    .replaceAll('=', '')
+  const anonJwt = `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode({ iss: 'supabase', role: 'anon' })}.${'A'.repeat(32)}`
+  const invalidCredentials = [
+    anonJwt,
+    'sb_secret_',
+    `sb_publishable_${'A'.repeat(32)}`,
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJvbGUiOiJhbm9uIn0.signature',
+    'not-a-key',
+  ]
+  for (const credential of invalidCredentials) {
+    if (getSupabaseSecretKey(JSON.stringify({ default: credential }))) {
+      throw new Error('Accepted an invalid or non-privileged Supabase credential.')
+    }
+  }
+  if (getSupabaseSecretKey('{invalid json')) throw new Error('Accepted malformed JSON.')
+  if (getSupabaseSecretKey(JSON.stringify({ other: `sb_secret_${'A'.repeat(32)}` }))) {
+    throw new Error('Accepted a credential without the default entry.')
+  }
+  if (getSupabaseSecretKey(JSON.stringify({ default: '' }))) {
+    throw new Error('Accepted an empty default credential.')
+  }
+  if (getSupabaseSecretKey(JSON.stringify({ default: 42 }))) {
+    throw new Error('Accepted a non-string default credential.')
+  }
+})
+
+Deno.test('accepts a device-only visit and rejects legacy location or IP fields', () => {
+  const record = {
+    event: 'visit',
+    visit_id: 'fc3c769a-df3f-4f06-9db6-fc88e7bd53d0',
+    visitor_id: '6a740347-57f8-4510-9bd9-3e6e28091247',
+    session_id: '57aa80d5-02cf-4ba7-9482-7f6d5bd79909',
+    ownership_token: 'a'.repeat(64),
+    first_visited_at: null,
+    page_path: '/',
+    device_type: 'unknown',
+    device_brand: 'Unknown',
+    device_model: 'Unknown',
+    operating_system: 'Unknown',
+    os_version: '',
+    browser: 'Unknown',
+    browser_version: '',
+    screen_width: null,
+    screen_height: null,
+    viewport_width: 1280,
+    viewport_height: 720,
+    device_pixel_ratio: 1,
+    language: 'en',
+  }
+  const visit = toVisitRecord(record)
+  if (!visit || 'ownership_token' in visit) throw new Error('Rejected a valid device-only visit or returned its ownership token.')
+  if (toVisitRecord({ ...record, latitude: 0 })) throw new Error('Accepted a GPS field.')
+  if (toVisitRecord({ ...record, ip_address: '203.0.113.1' })) throw new Error('Accepted an IP field.')
+  if (toVisitRecord({ ...record, viewport_width: 20001 })) throw new Error('Accepted an out-of-range viewport.')
+})
 
 Deno.test('accepts a high-entropy 32-byte base64url ownership secret without changing its HMAC bytes', async () => {
   const randomBytes = crypto.getRandomValues(new Uint8Array(32))

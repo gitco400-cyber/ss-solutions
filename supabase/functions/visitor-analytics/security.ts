@@ -25,6 +25,104 @@ export function decodeOwnershipSecret(value: string | undefined): Uint8Array | n
   return new TextEncoder().encode(value)
 }
 
+function decodeJwtSegment(value: string): Record<string, unknown> | null {
+  if (!/^[A-Za-z0-9_-]+$/.test(value)) return null
+
+  try {
+    const base64 = value.replaceAll('-', '+').replaceAll('_', '/')
+    const decoded = atob(base64 + '='.repeat((4 - base64.length % 4) % 4))
+    const parsed: unknown = JSON.parse(decoded)
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null
+    return parsed as Record<string, unknown>
+  } catch {
+    return null
+  }
+}
+
+function isServerSideSupabaseKey(value: string) {
+  if (/^sb_secret_[A-Za-z0-9_-]{20,}$/.test(value)) return true
+
+  const segments = value.split('.')
+  if (segments.length !== 3 || !segments[2]) return false
+  const header = decodeJwtSegment(segments[0])
+  const payload = decodeJwtSegment(segments[1])
+  if (!header || !payload || !/^[A-Za-z0-9_-]+$/.test(segments[2])) return false
+  return header.alg === 'HS256' && header.typ === 'JWT' && payload.iss === 'supabase' && payload.role === 'service_role'
+}
+
+export function getSupabaseSecretKey(value: string | undefined): string | null {
+  if (!value) return null
+
+  try {
+    const parsed: unknown = JSON.parse(value)
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null
+    const key = (parsed as Record<string, unknown>).default
+    if (typeof key !== 'string' || !key || key !== key.trim() || !isServerSideSupabaseKey(key)) return null
+    return key
+  } catch {
+    return null
+  }
+}
+
+const visitUuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const visitDeviceTypes = new Set(['mobile', 'desktop', 'tablet', 'unknown'])
+const visitRecordFields = new Set([
+  'event', 'visit_id', 'visitor_id', 'session_id', 'ownership_token', 'first_visited_at',
+  'page_path', 'device_type', 'device_brand', 'device_model', 'operating_system',
+  'os_version', 'browser', 'browser_version', 'screen_width', 'screen_height',
+  'viewport_width', 'viewport_height', 'device_pixel_ratio', 'language',
+])
+
+function isBoundedString(value: unknown, min: number, max: number): value is string {
+  return typeof value === 'string' && value.length >= min && value.length <= max
+}
+
+function isNullableInteger(value: unknown, max: number): value is number | null {
+  return value === null || (Number.isInteger(value) && Number(value) >= 0 && Number(value) <= max)
+}
+
+export function toVisitRecord(body: Record<string, unknown>) {
+  if (body.event !== 'visit' || !Object.keys(body).every((key) => visitRecordFields.has(key))) return null
+  if (!visitUuidPattern.test(String(body.visit_id ?? ''))
+    || !visitUuidPattern.test(String(body.visitor_id ?? ''))
+    || !visitUuidPattern.test(String(body.session_id ?? ''))) return null
+  if (!isBoundedString(body.page_path, 1, 512) || !body.page_path.startsWith('/') || /[?#]/.test(body.page_path)) return null
+  if (!visitDeviceTypes.has(String(body.device_type))) return null
+  if (!isBoundedString(body.device_brand, 1, 80) || !isBoundedString(body.device_model, 1, 120)) return null
+  if (!isBoundedString(body.operating_system, 1, 80) || !isBoundedString(body.os_version, 0, 80)) return null
+  if (!isBoundedString(body.browser, 1, 80) || !isBoundedString(body.browser_version, 0, 80)) return null
+  if (!isBoundedString(body.language, 1, 40)) return null
+  if (!isNullableInteger(body.screen_width, 20000) || !isNullableInteger(body.screen_height, 20000)
+    || !isNullableInteger(body.viewport_width, 20000) || !isNullableInteger(body.viewport_height, 20000)) return null
+  if (body.device_pixel_ratio !== null
+    && (typeof body.device_pixel_ratio !== 'number' || !Number.isFinite(body.device_pixel_ratio)
+      || body.device_pixel_ratio < 0 || body.device_pixel_ratio > 20)) return null
+  if (body.first_visited_at !== null
+    && (typeof body.first_visited_at !== 'string' || body.first_visited_at.length > 40
+      || !Number.isFinite(Date.parse(body.first_visited_at)) || Date.parse(body.first_visited_at) > Date.now() + 60_000)) return null
+
+  return {
+    visit_id: body.visit_id,
+    visitor_id: body.visitor_id,
+    session_id: body.session_id,
+    first_visited_at: body.first_visited_at,
+    page_path: body.page_path,
+    device_type: body.device_type,
+    device_brand: body.device_brand,
+    device_model: body.device_model,
+    operating_system: body.operating_system,
+    os_version: body.os_version,
+    browser: body.browser,
+    browser_version: body.browser_version,
+    screen_width: body.screen_width,
+    screen_height: body.screen_height,
+    viewport_width: body.viewport_width,
+    viewport_height: body.viewport_height,
+    device_pixel_ratio: body.device_pixel_ratio,
+    language: body.language,
+  }
+}
+
 function hasWeakPattern(bytes: Uint8Array) {
   if (new Set(bytes).size < 16) return true
   const printableBytes = bytes.filter((byte) => byte >= 0x20 && byte <= 0x7e).length

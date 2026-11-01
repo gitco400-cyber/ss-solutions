@@ -81,16 +81,6 @@ async function getVisitorIdentity() {
   return visitorIdentityPromise
 }
 
-function getLocationConsentStatus() {
-  try {
-    const stored = localStorage.getItem('ss-solutions-location-consent')
-    if (stored === 'declined' || stored === 'revoked') return stored
-    return stored === 'granted' || stored === 'consented' ? 'consented' : 'not_asked'
-  } catch {
-    return 'not_asked'
-  }
-}
-
 function browserFromUserAgent(userAgent) {
   const rules = [
     ['Microsoft Edge', /Edg(?:A|iOS)?\/([\d.]+)/],
@@ -104,7 +94,7 @@ function browserFromUserAgent(userAgent) {
     const match = userAgent.match(pattern)
     if (match) return { name, version: match[1] }
   }
-  return { name: 'Other', version: '' }
+  return { name: 'Unknown', version: '' }
 }
 
 function operatingSystemFromUserAgent(userAgent) {
@@ -119,17 +109,7 @@ function operatingSystemFromUserAgent(userAgent) {
     const match = userAgent.match(pattern)
     if (match) return { name, version: (match[1] ?? '').replaceAll('_', '.') }
   }
-  return { name: 'Other', version: '' }
-}
-
-function getDeviceBrand(model, userAgent) {
-  const modelText = model.toLowerCase()
-  if (/iphone|ipad|ipod|^apple/.test(modelText) || /iphone|ipad|ipod/.test(userAgent.toLowerCase())) return 'Apple'
-  if (/^sm-|^samsung|^gt-/.test(modelText) || /samsung/.test(userAgent.toLowerCase())) return 'Samsung'
-  if (/^pixel/.test(modelText) || /pixel/.test(userAgent.toLowerCase())) return 'Google'
-  if (/^mi |^redmi|^poco|^xiaomi/.test(modelText) || /(?:miui|redmi|poco)/i.test(userAgent)) return 'Xiaomi'
-  if (/^huawei|^honor|^ane-|^clt-|^ele-/.test(modelText) || /huawei|honor/i.test(userAgent)) return 'Huawei'
-  return 'Unknown'
+  return { name: 'Unknown', version: '' }
 }
 
 function getDeviceType(userAgent, isMobileHint, isDesktopModeTablet) {
@@ -137,7 +117,8 @@ function getDeviceType(userAgent, isMobileHint, isDesktopModeTablet) {
   if (isMobileHint === true) return 'mobile'
   if (/iPad|Tablet|PlayBook|Silk/i.test(userAgent) || (/Android/i.test(userAgent) && !/Mobile/i.test(userAgent)) || isDesktopModeTablet) return 'tablet'
   if (/Mobile|iPhone|iPod|Windows Phone/i.test(userAgent)) return 'mobile'
-  return 'desktop'
+  if (/Windows|Macintosh|Mac OS X|Linux|CrOS|X11/i.test(userAgent)) return 'desktop'
+  return 'unknown'
 }
 
 async function getClientHints() {
@@ -166,36 +147,33 @@ export async function createVisitorRecord() {
     const versionHints = Array.isArray(hints.fullVersionList) ? hints.fullVersionList : []
     const browserHint = versionHints.find((item) => /Microsoft Edge/i.test(item.brand))
       ?? versionHints.find((item) => /Google Chrome/i.test(item.brand))
-    const chromiumHint = versionHints.find((item) => /^Chromium$/i.test(item.brand))
-    const model = typeof hints.model === 'string' && hints.model.trim() ? hints.model.trim().slice(0, 120) : 'Not available'
+      ?? versionHints.find((item) => /Opera|Samsung Internet/i.test(item.brand))
+    const model = typeof hints.model === 'string' && hints.model.trim() ? hints.model.trim().slice(0, 120) : 'Unknown'
     const platform = typeof hints.platform === 'string' ? hints.platform : ''
     const operatingSystem = platform || operatingSystemFallback.name
     const osVersion = hints.platformVersion || operatingSystemFallback.version
-    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Unknown'
     const language = navigator.language || 'Unknown'
 
     return {
       visit_id: createUuid(),
       visitor_id: identity.visitorId,
       ownership_token: identity.ownershipToken,
-      location_consent_version: createUuid(),
       session_id: sessionId,
       first_visited_at: firstVisitedAt,
       page_path: `${window.location.pathname}`.slice(0, 512),
-      referrer: document.referrer || null,
       device_type: getDeviceType(userAgent, navigator.userAgentData?.mobile, navigator.maxTouchPoints > 1 && /Macintosh/i.test(userAgent)),
-      device_brand: getDeviceBrand(model === 'Not available' ? '' : model, userAgent),
+      device_brand: 'Unknown',
       device_model: model,
       operating_system: operatingSystem.slice(0, 80),
       os_version: String(osVersion).slice(0, 80),
-      browser: (browserHint?.brand || (chromiumHint ? 'Other' : browserFallback.name)).slice(0, 80),
-      browser_version: (browserHint?.version || (chromiumHint ? '' : browserFallback.version)).slice(0, 80),
+      browser: (browserHint?.brand || browserFallback.name).slice(0, 80),
+      browser_version: (browserHint?.version || browserFallback.version).slice(0, 80),
       screen_width: Number.isInteger(window.screen?.width) ? window.screen.width : null,
       screen_height: Number.isInteger(window.screen?.height) ? window.screen.height : null,
+      viewport_width: Number.isInteger(window.innerWidth) ? window.innerWidth : null,
+      viewport_height: Number.isInteger(window.innerHeight) ? window.innerHeight : null,
       device_pixel_ratio: Number.isFinite(window.devicePixelRatio) ? window.devicePixelRatio : null,
       language: language.slice(0, 40),
-      timezone: timeZone.slice(0, 100),
-      location_consent_status: getLocationConsentStatus(),
     }
   })().catch((error) => {
     pageVisitPromise = null
@@ -204,46 +182,11 @@ export async function createVisitorRecord() {
   return pageVisitPromise
 }
 
-export async function submitVisitorEvent(record, event, gpsData = {}) {
+export async function submitVisitorEvent(record) {
   if (!record || !supabase) return { error: new Error('Visitor analytics is not configured.') }
-  const identity = {
-    visitor_id: record.visitor_id,
-    visit_id: record.visit_id,
-    ownership_token: record.ownership_token,
-    location_consent_version: record.location_consent_version,
-  }
-  let body
-  if (event === 'visit') {
-    body = { ...record, event }
-  } else if (event === 'gps_reconsent') {
-    body = { ...identity, event }
-  } else if (event === 'location_challenge') {
-    body = { ...identity, event }
-  } else if (event === 'gps_status') {
-    body = {
-      ...identity,
-      event,
-      gps_permission_status: gpsData.gps_permission_status,
-      location_consent_status: gpsData.location_consent_status,
-    }
-  } else if (event === 'gps_grant') {
-    body = {
-      ...identity,
-      event,
-      challenge_token: gpsData.challenge_token,
-      latitude: gpsData.latitude,
-      longitude: gpsData.longitude,
-      gps_accuracy: gpsData.gps_accuracy,
-      gps_collected_at: gpsData.gps_collected_at,
-    }
-  } else if (event === 'revoke') {
-    body = { ...identity, event }
-  } else {
-    return { error: new Error('Unsupported analytics event.') }
-  }
   try {
     return await supabase.functions.invoke('visitor-analytics', {
-      body,
+      body: { ...record, event: 'visit' },
     })
   } catch (error) {
     return { data: null, error }

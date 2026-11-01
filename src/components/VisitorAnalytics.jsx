@@ -3,11 +3,9 @@ import {
   ChartNoAxesCombined,
   ChevronLeft,
   ChevronRight,
-  MapPin,
   Monitor,
   RefreshCw,
   Search,
-  ShieldCheck,
   Smartphone,
   Tablet,
   Trash2,
@@ -30,16 +28,29 @@ function getDateRange(from, to) {
 }
 
 function formatDate(value) {
-  if (!value) return 'Not available'
+  if (!value) return 'Unknown'
   const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? 'Not available' : date.toLocaleString()
+  return Number.isNaN(date.getTime()) ? 'Unknown' : date.toLocaleString()
 }
 
 function formatValue(value) {
-  return value === null || value === undefined || value === '' ? 'Not available' : String(value)
+  return value === null || value === undefined || value === '' ? 'Unknown' : String(value)
 }
 
-async function fetchAnalyticsData({ fromDate, toDate, search, deviceType, gpsStatus, page }) {
+function formatDeviceType(value) {
+  const deviceType = formatValue(value)
+  return deviceType === 'Unknown' ? deviceType : `${deviceType[0].toUpperCase()}${deviceType.slice(1)}`
+}
+
+function formatDimensions(width, height) {
+  return Number.isInteger(width) && Number.isInteger(height) ? `${width} × ${height}` : 'Unknown'
+}
+
+function formatVersion(name, version) {
+  return `${formatValue(name)}${version ? ` ${version}` : ''}`
+}
+
+async function fetchAnalyticsData({ fromDate, toDate, search, deviceType, page }) {
   const { start, end } = getDateRange(fromDate, toDate)
   const normalizedSearch = search.trim()
   if (normalizedSearch && !uuidPattern.test(normalizedSearch) && !safePathSearch.test(normalizedSearch)) {
@@ -52,7 +63,6 @@ async function fetchAnalyticsData({ fromDate, toDate, search, deviceType, gpsSta
   if (start) rowsQuery = rowsQuery.gte('visited_at', start)
   if (end) rowsQuery = rowsQuery.lt('visited_at', end)
   if (deviceType !== 'all') rowsQuery = rowsQuery.eq('device_type', deviceType)
-  if (gpsStatus !== 'all') rowsQuery = rowsQuery.eq('gps_permission_status', gpsStatus)
   if (normalizedSearch) {
     rowsQuery = uuidPattern.test(normalizedSearch)
       ? rowsQuery.or(`visitor_id.eq.${normalizedSearch},session_id.eq.${normalizedSearch}`)
@@ -81,7 +91,6 @@ function VisitorAnalytics() {
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
   const [deviceType, setDeviceType] = useState('all')
-  const [gpsStatus, setGpsStatus] = useState('all')
   const [refreshVersion, setRefreshVersion] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -92,7 +101,7 @@ function VisitorAnalytics() {
 
   useEffect(() => {
     let active = true
-    fetchAnalyticsData({ fromDate, toDate, search, deviceType, gpsStatus, page })
+    fetchAnalyticsData({ fromDate, toDate, search, deviceType, page })
       .then((result) => {
         if (!active) return
         setRecords(result.records)
@@ -110,7 +119,7 @@ function VisitorAnalytics() {
         setLoading(false)
       })
     return () => { active = false }
-  }, [deviceType, fromDate, gpsStatus, page, refreshVersion, search, toDate])
+  }, [deviceType, fromDate, page, refreshVersion, search, toDate])
 
   useEffect(() => {
     if (!selected) return undefined
@@ -124,8 +133,6 @@ function VisitorAnalytics() {
   const stats = useMemo(() => [
     { title: 'Total visits', value: summary?.total_visits, icon: ChartNoAxesCombined },
     { title: 'Unique visitors', value: summary?.unique_visitors, icon: Users },
-    { title: 'GPS shared', value: summary?.gps_shared_visitors, icon: MapPin },
-    { title: 'Without GPS', value: summary?.visitors_without_gps, icon: ShieldCheck },
     { title: 'Mobile visitors', value: summary?.mobile_visitors, icon: Smartphone },
     { title: 'Desktop visitors', value: summary?.desktop_visitors, icon: Monitor },
     { title: 'Tablet visitors', value: summary?.tablet_visitors, icon: Tablet },
@@ -160,9 +167,9 @@ function VisitorAnalytics() {
   return (
     <div className="admin-analytics">
       <div className="admin-section-intro">
-        <span className="admin-eyebrow">Privacy-conscious visitor activity</span>
+        <span className="admin-eyebrow">Device-only visitor activity</span>
         <h2>Visitor Analytics</h2>
-        <p>Visit and device data linked to random visitor/session IDs. Precise location is collected only after the visitor explicitly shares it. Statistics reflect the selected date range.</p>
+        <p>Page visits, device details, and random visitor/session IDs. No precise location or IP addresses are stored. Statistics reflect the selected date range.</p>
       </div>
 
       <div className="admin-analytics-stat-grid">
@@ -189,25 +196,25 @@ function VisitorAnalytics() {
         <label>Date from<input aria-label="Date from" onChange={(event) => { setLoading(true); setFromDate(event.target.value); setPage(0) }} type="date" value={fromDate} /></label>
         <label>Date to<input aria-label="Date to" onChange={(event) => { setLoading(true); setToDate(event.target.value); setPage(0) }} type="date" value={toDate} /></label>
         <label>Device<select onChange={(event) => { setLoading(true); setDeviceType(event.target.value); setPage(0) }} value={deviceType}><option value="all">All devices</option><option value="mobile">Mobile</option><option value="desktop">Desktop</option><option value="tablet">Tablet</option><option value="unknown">Unknown</option></select></label>
-        <label>GPS<select onChange={(event) => { setLoading(true); setGpsStatus(event.target.value); setPage(0) }} value={gpsStatus}><option value="all">All GPS status</option><option value="granted">Shared</option><option value="not_requested">Not requested</option><option value="denied">Denied</option><option value="unavailable">Unavailable</option><option value="error">Error</option><option value="revoked">Revoked</option></select></label>
         <button aria-label="Refresh analytics" className="admin-secondary-button" disabled={loading} onClick={() => { setLoading(true); setRefreshVersion((version) => version + 1) }} type="button"><RefreshCw size={15} />Refresh</button>
       </div>
 
       {error && <div className="admin-analytics-error" role="alert">{error}</div>}
       <div className="admin-table-wrap admin-analytics-table-wrap">
         <table className="admin-table admin-analytics-table">
-          <thead><tr><th>Visit date & time</th><th>Visitor ID</th><th>Device</th><th>Brand / model</th><th>Operating system</th><th>Browser</th><th>GPS</th><th>Location</th></tr></thead>
+          <thead><tr><th>Visit date & time</th><th>Visitor ID</th><th>Session ID</th><th>Device</th><th>Operating system</th><th>Browser</th><th>Screen</th><th>Viewport</th><th>Page</th></tr></thead>
           <tbody>
             {!loading && records.map((record) => (
               <tr key={record.id}>
                 <td>{formatDate(record.visited_at)}</td>
                 <td><button className="admin-analytics-id" onClick={() => setSelected(record)} type="button">{record.visitor_id}</button></td>
-                <td>{formatValue(record.device_type)}</td>
-                <td>{formatValue(record.device_brand)} / {formatValue(record.device_model)}</td>
-                <td>{formatValue(record.operating_system)} {record.os_version}</td>
-                <td>{formatValue(record.browser)} {record.browser_version}</td>
-                <td><span className={`admin-analytics-status ${record.gps_permission_status}`}>{record.gps_permission_status.replaceAll('_', ' ')}</span></td>
-                <td>{record.latitude !== null && record.longitude !== null ? <button className="admin-analytics-location" onClick={() => setSelected(record)} type="button"><MapPin size={14} /> View map</button> : 'Not shared'}</td>
+                <td>{record.session_id}</td>
+                <td>{formatDeviceType(record.device_type)}</td>
+                <td>{formatVersion(record.operating_system, record.os_version)}</td>
+                <td>{formatVersion(record.browser, record.browser_version)}</td>
+                <td>{formatDimensions(record.screen_width, record.screen_height)}</td>
+                <td>{formatDimensions(record.viewport_width, record.viewport_height)}</td>
+                <td>{formatValue(record.page_path)}</td>
               </tr>
             ))}
           </tbody>
@@ -230,55 +237,26 @@ function VisitorAnalytics() {
 }
 
 function VisitorDetails({ record, onClose }) {
-  const [showMap, setShowMap] = useState(false)
-  const hasLocation = record.latitude !== null && record.longitude !== null
-  const latitude = Number(record.latitude)
-  const longitude = Number(record.longitude)
-  const margin = 0.02
-  const bbox = `${longitude - margin}%2C${latitude - margin}%2C${longitude + margin}%2C${latitude + margin}`
-  const mapUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${latitude}%2C${longitude}`
-
   return (
     <div className="admin-analytics-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }} role="presentation">
       <section aria-labelledby="visitor-details-title" aria-modal="true" className="admin-analytics-modal" role="dialog">
-        <header><div><span className="admin-eyebrow">Visitor record</span><h2 id="visitor-details-title">Visitor details</h2></div><button aria-label="Close visitor details" className="admin-analytics-close" onClick={onClose} type="button"><X size={18} /></button></header>
+        <header><div><span className="admin-eyebrow">Visitor record</span><h2 id="visitor-details-title">Visit details</h2></div><button aria-label="Close visit details" className="admin-analytics-close" onClick={onClose} type="button"><X size={18} /></button></header>
         <div className="admin-analytics-details-grid">
           <Detail label="Random visitor ID" value={record.visitor_id} />
           <Detail label="Session ID" value={record.session_id} />
           <Detail label="Visit date/time" value={formatDate(record.visited_at)} />
           <Detail label="First visit" value={formatDate(record.first_visited_at)} />
           <Detail label="Page path" value={record.page_path} />
-          <Detail label="Referrer" value={record.referrer} />
-          <Detail label="Device category" value={record.device_type} />
+          <Detail label="Device category" value={formatDeviceType(record.device_type)} />
           <Detail label="Device brand" value={record.device_brand} />
           <Detail label="Device model" value={record.device_model} />
-          <Detail label="Operating system" value={`${formatValue(record.operating_system)} ${record.os_version || ''}`} />
-          <Detail label="Browser" value={`${formatValue(record.browser)} ${record.browser_version || ''}`} />
-          <Detail label="Screen resolution" value={record.screen_width && record.screen_height ? `${record.screen_width} × ${record.screen_height}` : null} />
+          <Detail label="Operating system" value={formatVersion(record.operating_system, record.os_version)} />
+          <Detail label="Browser" value={formatVersion(record.browser, record.browser_version)} />
+          <Detail label="Screen resolution" value={formatDimensions(record.screen_width, record.screen_height)} />
+          <Detail label="Viewport size" value={formatDimensions(record.viewport_width, record.viewport_height)} />
           <Detail label="Device pixel ratio" value={record.device_pixel_ratio} />
-          <Detail label="Language" value={record.language} />
-          <Detail label="Time zone" value={record.timezone} />
-          <Detail label="GPS permission" value={record.gps_permission_status} />
-          <Detail label="Location consent" value={record.location_consent_status} />
-          {hasLocation && <>
-            <Detail label="Latitude" value={latitude} />
-            <Detail label="Longitude" value={longitude} />
-            <Detail label="GPS accuracy" value={`${record.gps_accuracy} m`} />
-            <Detail label="GPS collected" value={formatDate(record.gps_collected_at)} />
-          </>}
+          <Detail label="Browser language" value={record.language} />
         </div>
-        {hasLocation && (
-          <div className="admin-analytics-map">
-            <p>Loading a map sends this visitor’s precise coordinates to OpenStreetMap, an external map provider. The map is not loaded until you choose to view it.</p>
-            {!showMap
-              ? <button className="admin-secondary-button" onClick={() => setShowMap(true)} type="button">View map with OpenStreetMap</button>
-              : <>
-                  <iframe loading="lazy" referrerPolicy="no-referrer" src={mapUrl} title="OpenStreetMap showing visitor-shared GPS location" />
-                  <a href={`https://www.openstreetmap.org/?mlat=${latitude}&mlon=${longitude}#map=16/${latitude}/${longitude}`} rel="noreferrer" target="_blank">Open this shared location in OpenStreetMap</a>
-                </>}
-          </div>
-        )}
-        {!hasLocation && <p className="admin-analytics-no-location">No GPS coordinates were shared for this visit.</p>}
       </section>
     </div>
   )
