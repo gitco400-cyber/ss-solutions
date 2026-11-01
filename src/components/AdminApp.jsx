@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertCircle,
   ArrowLeft,
@@ -21,6 +21,7 @@ import {
 } from 'lucide-react'
 import { siteConfig } from '../config/site.js'
 import { getSocialHref } from '../lib/social.js'
+import { notifyPublicSiteChanged } from '../lib/publicSiteSync.js'
 import { isSupabaseConfigured, supabase } from '../lib/supabase.js'
 import './admin.css'
 
@@ -45,6 +46,28 @@ const defaultSiteContent = {
   cta_text: 'Start a conversation',
 }
 
+const projectImageBucket = 'project-images'
+const allowedProjectImageTypes = new Set(['image/avif', 'image/gif', 'image/jpeg', 'image/png', 'image/webp'])
+const maxProjectImageSize = 5 * 1024 * 1024
+
+function getProjectImagePath(imageUrl) {
+  if (!supabase || !imageUrl) return null
+
+  try {
+    const image = new URL(imageUrl)
+    const bucketUrl = new URL(supabase.storage.from(projectImageBucket).getPublicUrl('').data.publicUrl)
+    const bucketPath = `${bucketUrl.pathname.replace(/\/+$/, '')}/`
+    if (image.origin !== bucketUrl.origin || !image.pathname.startsWith(bucketPath)) return null
+
+    const encodedPath = image.pathname.slice(bucketPath.length)
+    const path = encodedPath.split('/').map((part) => decodeURIComponent(part)).join('/')
+    if (!path || path.split('/').some((part) => part === '.' || part === '..')) return null
+    return path
+  } catch {
+    return null
+  }
+}
+
 function AdminApp() {
   const [session, setSession] = useState(null)
   const [authChecked, setAuthChecked] = useState(false)
@@ -60,12 +83,16 @@ function AdminApp() {
   const [dataError, setDataError] = useState('')
   const [toast, setToast] = useState(null)
   const [saving, setSaving] = useState(false)
+  const [projectOperationMessage, setProjectOperationMessage] = useState('')
+  const [projectActions, setProjectActions] = useState(() => new Set())
   const [editor, setEditor] = useState(null)
   const [socialDraft, setSocialDraft] = useState(null)
   const [inquiryQuery, setInquiryQuery] = useState('')
   const [inquiryStatus, setInquiryStatus] = useState('all')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const recordSaveLock = useRef(false)
+  const projectActionLocks = useRef(new Set())
 
   const notify = useCallback((message, type = 'success') => {
     setToast({ message, type })
@@ -199,6 +226,7 @@ function AdminApp() {
     try {
       const { error } = await supabase.from('site_settings').upsert({ key, value, updated_at: new Date().toISOString() })
       if (error) throw error
+      notifyPublicSiteChanged('settings')
       notify('Settings saved.')
       await fetchDashboard()
     } catch {
@@ -210,10 +238,14 @@ function AdminApp() {
 
   async function saveRecord(event) {
     event.preventDefault()
-    if (!editor) return
+    if (!editor || recordSaveLock.current) return
+    recordSaveLock.current = true
     setSaving(true)
     const isProject = editor.kind === 'project'
     const isNew = !editor.record.id
+    const previousImageUrl = isProject ? editor.record.image_url : null
+    let uploadedImageUrl = null
+    let databaseSaved = false
     let payload = isProject
       ? {
           title: editor.record.title.trim(),
@@ -236,51 +268,147 @@ function AdminApp() {
 
     try {
       if (isProject && editor.file) {
-        if (!editor.file.type.startsWith('image/') || editor.file.size > 5 * 1024 * 1024) {
-          throw new Error('Choose an image file smaller than 5 MB.')
+        if (!allowedProjectImageTypes.has(editor.file.type) || editor.file.size <= 0 || editor.file.size > maxProjectImageSize) {
+          throw new Error('Choose a JPG, PNG, WebP, GIF, or AVIF image no larger than 5 MB.')
         }
         const safeName = editor.file.name.replace(/[^a-zA-Z0-9._-]/g, '-')
         const path = `${crypto.randomUUID()}-${safeName}`
-        const { error: uploadError } = await supabase.storage.from('project-images').upload(path, editor.file, { contentType: editor.file.type })
+        setProjectOperationMessage('Uploading project image…')
+        const { error: uploadError } = await supabase.storage.from(projectImageBucket).upload(path, editor.file, { contentType: editor.file.type })
         if (uploadError) throw uploadError
-        payload = { ...payload, image_url: supabase.storage.from('project-images').getPublicUrl(path).data.publicUrl }
+        uploadedImageUrl = supabase.storage.from(projectImageBucket).getPublicUrl(path).data.publicUrl
+        payload = { ...payload, image_url: uploadedImageUrl }
+      } else if (isProject && editor.removeImage) {
+        payload = { ...payload, image_url: null }
       }
 
+      setProjectOperationMessage(isProject ? 'Saving project…' : '')
       const query = isNew
         ? supabase.from(isProject ? 'projects' : 'services').insert(payload)
         : supabase.from(isProject ? 'projects' : 'services').update(payload).eq('id', editor.record.id)
       const { error } = await query
       if (error) throw error
+      databaseSaved = true
+      if (isProject || editor.kind === 'service') notifyPublicSiteChanged(isProject ? 'projects' : 'services')
+
+      const imageToRemove = uploadedImageUrl ? previousImageUrl : (editor.removeImage ? previousImageUrl : null)
+      let cleanupNotice = ''
+      if (isProject && imageToRemove && imageToRemove !== uploadedImageUrl) {
+        setProjectOperationMessage('Checking whether the previous image is still in use…')
+        try {
+          const cleanup = await removeProjectImageIfUnused(imageToRemove)
+          if (cleanup === 'referenced') cleanupNotice = ' The previous image was kept because another project still uses it.'
+        } catch {
+          cleanupNotice = ' The project was saved, but the previous image could not be removed from Storage.'
+        }
+      }
+
       setEditor(null)
-      notify(`${isProject ? 'Project' : 'Service'} saved.`)
+      notify(`${isProject ? 'Project' : 'Service'} saved.${cleanupNotice}`, cleanupNotice.includes('could not be removed') ? 'error' : 'success')
       await fetchDashboard()
     } catch (error) {
-      notify(error.message || 'The record could not be saved.', 'error')
+      let cleanupNotice = ''
+      if (uploadedImageUrl && !databaseSaved) {
+        try {
+          const cleanup = await removeProjectImageIfUnused(uploadedImageUrl)
+          if (cleanup === 'referenced') cleanupNotice = ' The uploaded image was retained because a project now references it.'
+        } catch {
+          cleanupNotice = ' The uploaded image could not be removed from Storage.'
+        }
+      }
+      notify(`${error.message || 'The record could not be saved.'}${cleanupNotice}`, 'error')
     } finally {
+      recordSaveLock.current = false
       setSaving(false)
+      setProjectOperationMessage('')
     }
   }
 
+  async function removeProjectImageIfUnused(imageUrl) {
+    const path = getProjectImagePath(imageUrl)
+    if (!path) return 'not-managed'
+
+    const pageSize = 500
+    for (let offset = 0; ; offset += pageSize) {
+      const { data: references, error: referenceError } = await supabase
+        .from('projects')
+        .select('image_url')
+        .not('image_url', 'is', null)
+        .range(offset, offset + pageSize - 1)
+      if (referenceError) throw referenceError
+      const projects = references ?? []
+      if (projects.some((project) => getProjectImagePath(project.image_url) === path)) return 'referenced'
+      if (projects.length < pageSize) break
+    }
+
+    const { error } = await supabase.storage.from(projectImageBucket).remove([path])
+    if (error) throw error
+    return 'removed'
+  }
+
   async function updateRecord(table, id, updates, message = 'Changes saved.') {
+    const isProject = table === 'projects'
+    if (isProject && projectActionLocks.current.has(id)) return
+    if (isProject) {
+      projectActionLocks.current.add(id)
+      setProjectActions((current) => new Set(current).add(id))
+    }
     try {
       const { error } = await supabase.from(table).update(updates).eq('id', id)
       if (error) throw error
+      if (isProject || table === 'services') notifyPublicSiteChanged(isProject ? 'projects' : 'services')
       notify(message)
       await fetchDashboard()
     } catch {
       notify('The change could not be saved. Please try again.', 'error')
+    } finally {
+      if (isProject) {
+        projectActionLocks.current.delete(id)
+        setProjectActions((current) => {
+          const next = new Set(current)
+          next.delete(id)
+          return next
+        })
+      }
     }
   }
 
-  async function deleteRecord(table, id, name) {
+  async function deleteRecord(table, id, name, imageUrl = null) {
     if (!window.confirm(`Delete "${name}"? This cannot be undone.`)) return
+    const isProject = table === 'projects'
+    if (isProject && projectActionLocks.current.has(id)) return
+    if (isProject) {
+      projectActionLocks.current.add(id)
+      setProjectActions((current) => new Set(current).add(id))
+    }
     try {
       const { error } = await supabase.from(table).delete().eq('id', id)
       if (error) throw error
-      notify('Record deleted.')
+      if (isProject || table === 'services' || table === 'social_links') {
+        notifyPublicSiteChanged(isProject ? 'projects' : table === 'services' ? 'services' : 'socialLinks')
+      }
+      let cleanupNotice = ''
+      if (isProject && imageUrl) {
+        try {
+          const cleanup = await removeProjectImageIfUnused(imageUrl)
+          if (cleanup === 'referenced') cleanupNotice = ' The image was kept because another project still uses it.'
+        } catch {
+          cleanupNotice = ' The project was deleted, but its image could not be removed from Storage.'
+        }
+      }
+      notify(`Record deleted.${cleanupNotice}`, cleanupNotice.includes('could not be removed') ? 'error' : 'success')
       await fetchDashboard()
     } catch {
       notify('The record could not be deleted. Please try again.', 'error')
+    } finally {
+      if (isProject) {
+        projectActionLocks.current.delete(id)
+        setProjectActions((current) => {
+          const next = new Set(current)
+          next.delete(id)
+          return next
+        })
+      }
     }
   }
 
@@ -310,6 +438,7 @@ function AdminApp() {
     try {
       const { error } = await query
       if (error) throw error
+      notifyPublicSiteChanged('socialLinks')
       setSocialDraft(null)
       notify('Social/contact settings saved.')
       await fetchDashboard()
@@ -442,9 +571,11 @@ function AdminApp() {
                 editor={editor}
                 setEditor={setEditor}
                 saving={saving}
+                projectActions={projectActions}
                 onSave={saveRecord}
                 onUpdate={(record, updates) => updateRecord('projects', record.id, updates)}
-                onDelete={(record) => deleteRecord('projects', record.id, record.title)}
+                onDelete={(record) => deleteRecord('projects', record.id, record.title, record.image_url)}
+                operationMessage={projectOperationMessage}
               />
             )}
             {section === 'inquiries' && (
@@ -539,7 +670,7 @@ function ContentEditor({ content, setContent, onSave, saving }) {
   )
 }
 
-function RecordManager({ kind, records, editor, setEditor, saving, onSave, onUpdate, onDelete }) {
+function RecordManager({ kind, records, editor, setEditor, saving, projectActions = new Set(), onSave, onUpdate, onDelete, operationMessage = '' }) {
   const isProject = kind === 'project'
   const title = isProject ? 'Projects' : 'Services'
   const table = isProject ? 'projects' : 'services'
@@ -558,20 +689,26 @@ function RecordManager({ kind, records, editor, setEditor, saving, onSave, onUpd
     <div className="admin-editor-wrap">
       <div className="admin-section-intro admin-section-heading">
         <div><span className="admin-eyebrow">Public website</span><h2>{title} management</h2><p>Add, edit, publish, or disable public {title.toLowerCase()}.</p></div>
-        <button className="admin-primary-button" onClick={() => startEdit()} type="button"><Plus size={16} /> Add {isProject ? 'project' : 'service'}</button>
+        <button className="admin-primary-button" disabled={saving} onClick={() => startEdit()} type="button"><Plus size={16} /> Add {isProject ? 'project' : 'service'}</button>
       </div>
-      {editor?.kind === kind && <RecordForm editor={editor} setEditor={setEditor} isProject={isProject} saving={saving} onSave={onSave} />}
+      {editor?.kind === kind && <RecordForm editor={editor} setEditor={setEditor} isProject={isProject} saving={saving} operationMessage={operationMessage} onSave={onSave} />}
       <div className="admin-table-wrap">
         <table className="admin-table">
           <thead><tr><th>Name</th><th>{isProject ? 'Category' : 'Description'}</th><th>Status</th><th>Actions</th></tr></thead>
-          <tbody>{records.map((record) => (
-            <tr key={record.id}>
-              <td><strong>{record.title}</strong>{isProject && record.image_url && <a className="admin-inline-link" href={record.image_url} rel="noreferrer" target="_blank">View image</a>}</td>
-              <td>{isProject ? record.category : record.description}</td>
-              <td><button className={`admin-status-toggle${(isProject ? record.is_published : record.is_active) ? ' enabled' : ''}`} onClick={() => onUpdate(record, { [isProject ? 'is_published' : 'is_active']: !(isProject ? record.is_published : record.is_active) })} type="button">{(isProject ? record.is_published : record.is_active) ? 'Published' : 'Hidden'}</button></td>
-              <td className="admin-row-actions"><button aria-label={`Edit ${record.title}`} onClick={() => startEdit(record)} type="button">Edit</button><button aria-label={`Delete ${record.title}`} className="danger" onClick={() => onDelete(record)} type="button"><Trash2 size={15} /></button></td>
-            </tr>
-          ))}</tbody>
+          <tbody>
+            {records.map((record) => {
+            const busy = isProject && projectActions.has(record.id)
+            const active = isProject ? record.is_published : record.is_active
+            return (
+              <tr key={record.id}>
+                <td><strong>{record.title}</strong>{isProject && record.image_url && <a className="admin-inline-link" href={record.image_url} rel="noreferrer" target="_blank">View image</a>}</td>
+                <td>{isProject ? record.category : record.description}</td>
+                <td><button className={`admin-status-toggle${active ? ' enabled' : ''}`} disabled={busy || saving} onClick={() => onUpdate(record, { [isProject ? 'is_published' : 'is_active']: !active })} type="button">{busy ? 'Saving…' : active ? 'Published' : 'Hidden'}</button></td>
+                <td className="admin-row-actions"><button aria-label={`Edit ${record.title}`} disabled={busy || saving} onClick={() => startEdit(record)} type="button">Edit</button><button aria-label={`Delete ${record.title}`} className="danger" disabled={busy || saving} onClick={() => onDelete(record)} type="button">{busy ? 'Deleting…' : <Trash2 size={15} />}</button></td>
+              </tr>
+            )
+            })}
+          </tbody>
         </table>
         {!records.length && <p className="admin-empty">No {table} yet. Add one to get started.</p>}
       </div>
@@ -579,29 +716,38 @@ function RecordManager({ kind, records, editor, setEditor, saving, onSave, onUpd
   )
 }
 
-function RecordForm({ editor, setEditor, isProject, saving, onSave }) {
+function RecordForm({ editor, setEditor, isProject, saving, operationMessage, onSave }) {
   const record = editor.record
   const change = (key, value) => setEditor({ ...editor, record: { ...record, [key]: value } })
   return (
-    <form className="admin-record-form" onSubmit={onSave}>
-      <div className="admin-record-form-head"><strong>{record.id ? 'Edit' : 'Add'} {isProject ? 'project' : 'service'}</strong><button aria-label="Close editor" onClick={() => setEditor(null)} type="button"><X size={17} /></button></div>
+    <form aria-busy={saving} className="admin-record-form" onSubmit={onSave}>
+      <div className="admin-record-form-head"><strong>{record.id ? 'Edit' : 'Add'} {isProject ? 'project' : 'service'}</strong><button aria-label="Close editor" disabled={saving} onClick={() => setEditor(null)} type="button"><X size={17} /></button></div>
       <div className="admin-form-grid">
-        <label>{isProject ? 'Project name' : 'Service name'}<input onChange={(event) => change('title', event.target.value)} required value={record.title} /></label>
+        <label>{isProject ? 'Project name' : 'Service name'}<input disabled={saving} onChange={(event) => change('title', event.target.value)} required value={record.title} /></label>
         {isProject
-          ? <label>Category<input onChange={(event) => change('category', event.target.value)} required value={record.category} /></label>
-          : <label>Lucide icon name<input onChange={(event) => change('icon', event.target.value)} placeholder="Code2, Cpu, Gauge…" required value={record.icon} /></label>}
-        <label className="wide">Description<textarea onChange={(event) => change('description', event.target.value)} required value={record.description} /></label>
+          ? <label>Category<input disabled={saving} onChange={(event) => change('category', event.target.value)} required value={record.category} /></label>
+          : <label>Lucide icon name<input disabled={saving} onChange={(event) => change('icon', event.target.value)} placeholder="Code2, Cpu, Gauge…" required value={record.icon} /></label>}
+        <label className="wide">Description<textarea disabled={saving} onChange={(event) => change('description', event.target.value)} required value={record.description} /></label>
         {isProject ? (
           <>
-            <label>Visual type<select onChange={(event) => change('type', event.target.value)} value={record.type}><option value="commerce">Commerce</option><option value="analytics">Analytics</option><option value="studio">Studio</option></select></label>
-            <label>Tags, separated by commas<input onChange={(event) => change('tags', event.target.value)} value={record.tags} /></label>
-            <label className="wide">Project image<input accept="image/*" onChange={(event) => setEditor({ ...editor, file: event.target.files?.[0] ?? null })} type="file" /><small>Optional image upload, up to 5 MB. Supabase Storage must be set up.</small></label>
-            <label className="admin-checkbox"><input checked={Boolean(record.is_published)} onChange={(event) => change('is_published', event.target.checked)} type="checkbox" /> Published on website</label>
-            <label className="admin-checkbox"><input checked={Boolean(record.is_demo)} onChange={(event) => change('is_demo', event.target.checked)} type="checkbox" /> Demonstration concept</label>
+            <label>Visual type<select disabled={saving} onChange={(event) => change('type', event.target.value)} value={record.type}><option value="commerce">Commerce</option><option value="analytics">Analytics</option><option value="studio">Studio</option></select></label>
+            <label>Tags, separated by commas<input disabled={saving} onChange={(event) => change('tags', event.target.value)} value={record.tags} /></label>
+            <label className="wide">Project image<input accept=".avif,.gif,.jpg,.jpeg,.png,.webp" disabled={saving} onChange={(event) => setEditor({ ...editor, file: event.target.files?.[0] ?? null, removeImage: false })} type="file" /><small>Optional JPG, PNG, WebP, GIF, or AVIF image, up to 5 MB. Uploading a replacement removes the old image after the project saves.</small></label>
+            {record.image_url && (
+              <div className="wide">
+                <a className="admin-inline-link" href={record.image_url} rel="noreferrer" target="_blank">View current project image</a>
+                <label className="admin-checkbox">
+                  <input checked={Boolean(editor.removeImage)} disabled={saving} onChange={(event) => setEditor({ ...editor, removeImage: event.target.checked, file: event.target.checked ? null : editor.file })} type="checkbox" />
+                  Remove current image when saving
+                </label>
+              </div>
+            )}
+            <label className="admin-checkbox"><input checked={Boolean(record.is_published)} disabled={saving} onChange={(event) => change('is_published', event.target.checked)} type="checkbox" /> Published on website</label>
+            <label className="admin-checkbox"><input checked={Boolean(record.is_demo)} disabled={saving} onChange={(event) => change('is_demo', event.target.checked)} type="checkbox" /> Demonstration concept</label>
           </>
-        ) : <label className="admin-checkbox"><input checked={Boolean(record.is_active)} onChange={(event) => change('is_active', event.target.checked)} type="checkbox" /> Active on website</label>}
+        ) : <label className="admin-checkbox"><input checked={Boolean(record.is_active)} disabled={saving} onChange={(event) => change('is_active', event.target.checked)} type="checkbox" /> Active on website</label>}
       </div>
-      <div className="admin-form-actions"><button className="admin-primary-button" disabled={saving} type="submit"><Save size={16} /> {saving ? 'Saving…' : 'Save changes'}</button><button className="admin-secondary-button" onClick={() => setEditor(null)} type="button">Cancel</button></div>
+      <div className="admin-form-actions"><button className="admin-primary-button" disabled={saving} type="submit"><Save size={16} /> {saving ? 'Saving…' : 'Save changes'}</button><button className="admin-secondary-button" disabled={saving} onClick={() => setEditor(null)} type="button">Cancel</button>{operationMessage && <span role="status">{operationMessage}</span>}</div>
     </form>
   )
 }

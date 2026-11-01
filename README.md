@@ -46,12 +46,14 @@ The dashboard supports:
 
 - Website text and SEO title/description editing.
 - Service create, edit, activate/deactivate, and delete.
-- Project create, edit, publish/unpublish, demo labeling, and image uploads.
+- Project create, edit, publish/unpublish, demo labeling, and image uploads (JPG, PNG, WebP, GIF, or AVIF up to 5 MB). Replaced, removed, or project-deleted images are removed from Storage only when no project references them.
 - Inquiry search, status updates, and deletion.
 - Editable social/contact destinations with enable/disable, validation, preview, and persistence.
 - Administrator password updates and logout.
 
-The public site reads active/published content from Supabase and displays only enabled destinations with valid URLs. Starter portfolio items are explicitly marked as demonstration concepts. Starter contact details are the supplied WhatsApp number, business email, and Discord profile; Facebook, Instagram, and LinkedIn are not enabled by default.
+The public site reads active/published content from Supabase and displays only enabled destinations with valid URLs. It fetches current public data on page load, refreshes after public-facing changes made in another dashboard tab, and checks for updates when the page becomes visible again. If a request fails, previously loaded content stays visible and a status notice identifies any built-in preview content. Use the notice's refresh action to retry immediately. Starter portfolio items are explicitly marked as demonstration concepts. Starter contact details are the supplied WhatsApp number, business email, and Discord profile; Facebook, Instagram, and LinkedIn are not enabled by default.
+
+The public website defaults to its dark theme and includes a navbar theme toggle. A visitor's light/dark choice is saved in browser local storage and applied before the page renders. The administrator dashboard remains dark independently of the public theme. Public sections use fluid widths with a wider maximum content width for large screens.
 
 ## GitHub Pages
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   ArrowDown,
   ArrowRight,
@@ -12,6 +12,7 @@ import {
   LifeBuoy,
   Megaphone,
   PenTool,
+  RefreshCw,
   ShieldCheck,
   Sparkles,
 } from 'lucide-react'
@@ -25,6 +26,7 @@ import SectionHeading from './components/SectionHeading.jsx'
 import ServiceCard from './components/ServiceCard.jsx'
 import SocialLinks from './components/SocialLinks.jsx'
 import { getDefaultSocialLinks } from './lib/social.js'
+import { fetchPublicSiteData, subscribeToPublicSiteChanges } from './lib/publicSiteSync.js'
 import { isSupabaseConfigured, supabase } from './lib/supabase.js'
 import './App.css'
 
@@ -74,7 +76,7 @@ const projects = [
 ]
 
 const defaultContent = {
-  hero_heading: 'Technology that takes your business further.',
+  hero_heading: 'We Build Digital Experiences That Move Businesses Forward.',
   hero_description: siteConfig.tagline,
   about_heading: 'Good technology should make the next step feel possible.',
   about_paragraph_1: 'SS Solutions brings software development and digital services together to help businesses work smarter, communicate clearly, and keep moving forward.',
@@ -176,6 +178,29 @@ function ContactForm({ serviceList }) {
   )
 }
 
+function ScrollProgress() {
+  const progressRef = useRef(null)
+
+  useEffect(() => {
+    function updateProgress() {
+      const scrollableHeight = document.documentElement.scrollHeight - window.innerHeight
+      const progress = scrollableHeight > 0 ? Math.min(window.scrollY / scrollableHeight, 1) : 0
+      progressRef.current?.style.setProperty('--scroll-progress', String(progress))
+    }
+
+    updateProgress()
+    document.addEventListener('scroll', updateProgress, { passive: true })
+    window.addEventListener('resize', updateProgress)
+
+    return () => {
+      document.removeEventListener('scroll', updateProgress)
+      window.removeEventListener('resize', updateProgress)
+    }
+  }, [])
+
+  return <div aria-hidden="true" className="scroll-progress" ref={progressRef} />
+}
+
 function App() {
   const reduceMotion = useReducedMotion()
   const [publicServices, setPublicServices] = useState(() => services.map((service) => ({
@@ -186,36 +211,121 @@ function App() {
   const [socialLinks, setSocialLinks] = useState(() => getDefaultSocialLinks(siteConfig))
   const [content, setContent] = useState(defaultContent)
   const [seo, setSeo] = useState({ title: 'SS Solutions — Software & Digital', description: siteConfig.tagline })
-  const [contentError, setContentError] = useState('')
+  const [syncInfo, setSyncInfo] = useState({
+    loading: isSupabaseConfigured,
+    refreshing: false,
+    errors: [],
+    loaded: { services: false, projects: false, socialLinks: false, content: false, seo: false },
+    savedSettings: { content: false, seo: false },
+  })
 
   useEffect(() => {
-    if (!isSupabaseConfigured || !supabase) return
+    let active = true
+    let requestInProgress = false
+    const queuedSources = new Set()
+    let lastRefreshAt = 0
 
-    async function loadPublicContent() {
-      const results = await Promise.all([
-        supabase.from('services').select('*').eq('is_active', true).order('sort_order'),
-        supabase.from('projects').select('*').eq('is_published', true).order('sort_order'),
-        supabase.from('social_links').select('*').eq('enabled', true).order('sort_order'),
-        supabase.from('site_settings').select('value').eq('key', 'site_content').maybeSingle(),
-        supabase.from('site_settings').select('value').eq('key', 'seo').maybeSingle(),
-      ])
-      const failedResult = results.find((result) => result.error)
-      if (failedResult?.error) throw failedResult.error
+    async function refreshPublicContent(sources = ['services', 'projects', 'socialLinks', 'settings']) {
+      if (!isSupabaseConfigured || !supabase || !active) return
+      if (requestInProgress) {
+        sources.forEach((source) => queuedSources.add(source))
+        return
+      }
 
-      const [serviceResult, projectResult, socialResult, contentResult, seoResult] = results
-      setPublicServices(serviceResult.data.map((service) => ({ ...service, icon: serviceIcons[service.icon] ?? Code2 })))
-      setPublicProjects(projectResult.data.map((project, index) => ({
-        ...project,
-        number: String(index + 1).padStart(2, '0'),
-      })))
-      setSocialLinks(socialResult.data)
-      if (contentResult.data?.value) setContent((current) => ({ ...current, ...contentResult.data.value }))
-      if (seoResult.data?.value) setSeo((current) => ({ ...current, ...seoResult.data.value }))
+      requestInProgress = true
+      const requestedSources = new Set(sources)
+      try {
+        do {
+          const currentSources = [...requestedSources]
+          requestedSources.clear()
+          setSyncInfo((current) => ({
+            ...current,
+            loading: !Object.values(current.loaded).some(Boolean),
+            refreshing: true,
+          }))
+          const results = await fetchPublicSiteData(supabase, currentSources)
+          if (!active) break
+
+          const serviceResult = results.services
+          const projectResult = results.projects
+          const socialResult = results.socialLinks
+          const settingsResult = results.settings
+          const serviceOk = !serviceResult || (serviceResult.status === 'fulfilled' && !serviceResult.value.error)
+          const projectOk = !projectResult || (projectResult.status === 'fulfilled' && !projectResult.value.error)
+          const socialOk = !socialResult || (socialResult.status === 'fulfilled' && !socialResult.value.error)
+          const settingsOk = !settingsResult || (settingsResult.status === 'fulfilled' && !settingsResult.value.error)
+          const errors = []
+
+          if (serviceResult && serviceOk) {
+            const data = serviceResult.value.data ?? []
+            setPublicServices(data.map((service) => ({ ...service, icon: serviceIcons[service.icon] ?? Code2 })))
+          } else if (serviceResult) errors.push('services')
+
+          if (projectResult && projectOk) {
+            const data = projectResult.value.data ?? []
+            setPublicProjects(data.map((project, index) => ({
+              ...project,
+              number: String(index + 1).padStart(2, '0'),
+            })))
+          } else if (projectResult) errors.push('projects')
+
+          if (socialResult && socialOk) setSocialLinks(socialResult.value.data ?? [])
+          else if (socialResult) errors.push('socialLinks')
+
+          let savedSettings = null
+          if (settingsResult && settingsOk) {
+            const settings = Object.fromEntries((settingsResult.value.data ?? []).map((setting) => [setting.key, setting.value]))
+            savedSettings = {
+              content: Object.hasOwn(settings, 'site_content'),
+              seo: Object.hasOwn(settings, 'seo'),
+            }
+            setContent({ ...defaultContent, ...(settings.site_content ?? {}) })
+            setSeo({ title: 'SS Solutions — Software & Digital', description: siteConfig.tagline, ...(settings.seo ?? {}) })
+          } else if (settingsResult) errors.push('settings')
+
+          setSyncInfo((current) => ({
+            loading: false,
+            refreshing: false,
+            errors: [...current.errors.filter((source) => !currentSources.includes(source)), ...errors],
+            loaded: {
+              services: current.loaded.services || Boolean(serviceResult && serviceOk),
+              projects: current.loaded.projects || Boolean(projectResult && projectOk),
+              socialLinks: current.loaded.socialLinks || Boolean(socialResult && socialOk),
+              content: current.loaded.content || Boolean(settingsResult && settingsOk),
+              seo: current.loaded.seo || Boolean(settingsResult && settingsOk),
+            },
+            savedSettings: savedSettings ?? current.savedSettings,
+          }))
+          lastRefreshAt = Date.now()
+          queuedSources.forEach((source) => requestedSources.add(source))
+          queuedSources.clear()
+        } while (requestedSources.size > 0 && active)
+      } catch {
+        if (active) {
+          setSyncInfo((current) => ({ ...current, loading: false, refreshing: false, errors: ['website content'] }))
+        }
+      } finally {
+        requestInProgress = false
+      }
     }
 
-    loadPublicContent()
-      .then(() => setContentError(''))
-      .catch(() => setContentError('Live website content could not be loaded. Showing the built-in content instead.'))
+    const unsubscribe = subscribeToPublicSiteChanges((source) => {
+      void refreshPublicContent(source === 'all' ? ['services', 'projects', 'socialLinks', 'settings'] : [source])
+    })
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && Date.now() - lastRefreshAt > 30_000) {
+        void refreshPublicContent()
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    void refreshPublicContent()
+
+    return () => {
+      active = false
+      unsubscribe()
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
   }, [])
 
   useEffect(() => {
@@ -226,10 +336,40 @@ function App() {
   }, [seo])
 
   const whatsapp = socialLinks.find((link) => link.enabled && link.platform.toLowerCase() === 'whatsapp')
+  const previewSections = [
+    !syncInfo.loaded.services && 'services',
+    !syncInfo.loaded.projects && 'projects',
+    !syncInfo.loaded.socialLinks && 'contact links',
+    !syncInfo.loaded.content && 'website text',
+    syncInfo.loaded.content && !syncInfo.savedSettings.content && 'default website text',
+    !syncInfo.loaded.seo && 'SEO settings',
+    syncInfo.loaded.seo && !syncInfo.savedSettings.seo && 'default SEO settings',
+  ].filter(Boolean)
 
   return (
     <>
       <a className="skip-link" href="#main-content">Skip to content</a>
+      {(syncInfo.loading || syncInfo.refreshing || syncInfo.errors.length > 0 || previewSections.length > 0 || !isSupabaseConfigured) && (
+        <div className={`public-sync-notice${syncInfo.errors.length ? ' has-error' : ''}`} role={syncInfo.errors.length ? 'alert' : 'status'}>
+          <span>
+            {!isSupabaseConfigured
+              ? 'Preview mode: showing built-in demo content; saved website content is unavailable.'
+              : syncInfo.loading
+                ? 'Loading the latest saved website content. Preview content remains available meanwhile.'
+                : syncInfo.refreshing
+                  ? 'Refreshing saved website content. The currently displayed content remains available.'
+                : syncInfo.errors.length
+                  ? `Some saved content could not be refreshed (${syncInfo.errors.join(', ')}). Showing the last available content where possible${previewSections.length ? `; built-in preview remains for ${previewSections.join(', ')}` : ''}.`
+                  : `Preview content is being used for: ${previewSections.join(', ')}.`}
+          </span>
+          {isSupabaseConfigured && !syncInfo.loading && (
+            <button disabled={syncInfo.refreshing} onClick={() => window.dispatchEvent(new Event('ss-solutions:public-site-sync'))} type="button">
+              <RefreshCw size={14} /> {syncInfo.refreshing ? 'Refreshing…' : 'Refresh content'}
+            </button>
+          )}
+        </div>
+      )}
+      <ScrollProgress />
       <Header />
       <main id="main-content">
         <section className="hero section-wrap" id="home">
@@ -343,7 +483,6 @@ function App() {
               <p>Tell us what you’re working on, what’s getting in the way, or where you’d like to go next. We’ll take it from there.</p>
               <div className="contact-promise"><span className="status-dot" /> A real conversation. A thoughtful next step.</div>
               <SocialLinks className="contact-social-links" links={socialLinks} />
-              {contentError && <p className="public-content-error" role="status">{contentError}</p>}
             </div>
             <ContactForm serviceList={publicServices} />
           </div>

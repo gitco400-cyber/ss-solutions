@@ -2,7 +2,8 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" href="%BASE_URL%logo.png" />
+    <link rel="icon" type="image/png" href="/logo.png" />
+    <link rel="apple-touch-icon" href="/logo.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#080a0b" />
     <meta name="description" content="SS Solutions is your partner in software development and digital transformation. Explore web development, software, design, IT support, and digital services." />
@@ -11,6 +12,16 @@
     <meta property="og:description" content="Your Partner in Software Development and Digital Transformation." />
     <meta property="og:image" content="%BASE_URL%logo.png" />
     <title>SS Solutions — Software &amp; Digital</title>
+    <script>
+      try {
+        const theme = localStorage.getItem('ss-solutions-theme')
+        const selectedTheme = location.hash.startsWith('#/admin') ? 'dark' : theme === 'light' ? 'light' : 'dark'
+        document.documentElement.dataset.theme = selectedTheme
+        document.querySelector('meta[name="theme-color"]').content = selectedTheme === 'light' ? '#f4f5f3' : '#080a0b'
+      } catch {
+        document.documentElement.dataset.theme = 'dark'
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

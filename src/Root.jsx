@@ -11,6 +11,19 @@ function Root() {
     return () => window.removeEventListener('hashchange', handleHashChange)
   }, [])
 
+  useEffect(() => {
+    let theme = 'dark'
+    if (!adminRoute) {
+      try {
+        theme = window.localStorage.getItem('ss-solutions-theme') === 'light' ? 'light' : 'dark'
+      } catch {
+        theme = 'dark'
+      }
+    }
+    document.documentElement.dataset.theme = theme
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'light' ? '#f4f5f3' : '#080a0b')
+  }, [adminRoute])
+
   return adminRoute ? <AdminApp /> : <App />
 }
 
