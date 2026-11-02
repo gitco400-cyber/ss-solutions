@@ -2,7 +2,7 @@ import { ArrowUp } from 'lucide-react'
 import { siteConfig } from '../config/site.js'
 import SocialLinks from './SocialLinks.jsx'
 
-function Footer({ socialLinks, tagline }) {
+function Footer({ socialLinks, tagline, analyticsEnabled }) {
   return (
     <footer className="site-footer">
       <div className="footer-main section-wrap">
@@ -23,7 +23,11 @@ function Footer({ socialLinks, tagline }) {
         </div>
         <a className="back-top" href="#home" aria-label="Back to top"><ArrowUp size={18} /></a>
       </div>
-      <div className="footer-bottom section-wrap"><span>© {new Date().getFullYear()} {siteConfig.name}. All rights reserved.</span><span>Thoughtfully built for what’s next.</span></div>
+      <div className="footer-bottom section-wrap">
+        <span>© {new Date().getFullYear()} {siteConfig.name}. All rights reserved.</span>
+        <span>Thoughtfully built for what’s next.</span>
+        {analyticsEnabled && <button className="analytics-preferences-link" onClick={() => window.dispatchEvent(new Event('ss-solutions:open-analytics-preferences'))} type="button">Analytics preferences</button>}
+      </div>
     </footer>
   )
 }

@@ -1,0 +1,91 @@
+.analytics-consent-panel {
+  position: fixed;
+  z-index: 80;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  width: min(440px, calc(100vw - 32px));
+  padding: 21px;
+  border: 1px solid rgba(75, 219, 189, .24);
+  border-radius: 14px;
+  color: #edf2ef;
+  background: rgba(12, 16, 17, .97);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, .38);
+  backdrop-filter: blur(18px);
+}
+
+.analytics-consent-close {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  border: 0;
+  color: #9aa6a1;
+  background: transparent;
+  cursor: pointer;
+  font-size: 22px;
+}
+
+.analytics-consent-eyebrow {
+  color: #4bdbbd;
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+.analytics-consent-panel h2 {
+  margin: 8px 0;
+  font-size: 17px;
+  font-weight: 550;
+  letter-spacing: -.03em;
+}
+
+.analytics-consent-panel p {
+  margin: 0;
+  color: #aab4af;
+  font-size: 10px;
+  line-height: 1.65;
+}
+
+.analytics-consent-panel .analytics-consent-message {
+  margin-top: 9px;
+  color: #ffd1bd;
+}
+
+.analytics-consent-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.analytics-consent-actions button {
+  min-height: 35px;
+  padding: 0 11px;
+  border: 1px solid rgba(235, 244, 241, .14);
+  border-radius: 7px;
+  color: #c4cdc8;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 10px;
+}
+
+.analytics-consent-actions .analytics-consent-accept {
+  border-color: transparent;
+  color: #07110e;
+  background: linear-gradient(105deg, #5ce1c4, #a4ead9);
+  font-weight: 650;
+}
+
+.analytics-consent-actions button:hover {
+  border-color: rgba(75, 219, 189, .5);
+}
+
+@media (max-width: 480px) {
+  .analytics-consent-panel {
+    right: 10px;
+    bottom: max(10px, env(safe-area-inset-bottom));
+    width: calc(100vw - 20px);
+    padding: 17px;
+  }
+}

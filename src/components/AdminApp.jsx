@@ -1,9 +1,9 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertCircle,
   ArrowLeft,
+  Activity,
   BriefcaseBusiness,
-  ChartNoAxesCombined,
   CheckCircle2,
   Eye,
   FileText,
@@ -24,17 +24,16 @@ import { siteConfig } from '../config/site.js'
 import { getSocialHref } from '../lib/social.js'
 import { notifyPublicSiteChanged } from '../lib/publicSiteSync.js'
 import { isSupabaseConfigured, supabase } from '../lib/supabase.js'
+import VisitorDeviceAnalytics from './VisitorDeviceAnalytics.jsx'
 import './admin.css'
-
-const VisitorAnalytics = lazy(() => import('./VisitorAnalytics.jsx'))
 
 const sections = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
   { id: 'content', label: 'Website Content', icon: FileText },
   { id: 'services', label: 'Services', icon: Settings },
   { id: 'projects', label: 'Projects', icon: BriefcaseBusiness },
-  { id: 'visitor-analytics', label: 'Visitor Analytics', icon: ChartNoAxesCombined },
   { id: 'inquiries', label: 'Inquiries', icon: Inbox },
+  { id: 'analytics', label: 'Visitor Analytics', icon: Activity },
   { id: 'social', label: 'Social & Contact', icon: Link2 },
   { id: 'seo', label: 'SEO Settings', icon: Eye },
   { id: 'account', label: 'Account & Security', icon: ShieldCheck },
@@ -582,11 +581,6 @@ function AdminApp() {
                 operationMessage={projectOperationMessage}
               />
             )}
-            {section === 'visitor-analytics' && (
-              <Suspense fallback={<div className="admin-loading inline">Loading visitor analytics…</div>}>
-                <VisitorAnalytics />
-              </Suspense>
-            )}
             {section === 'inquiries' && (
               <Inquiries
                 inquiries={visibleInquiries}
@@ -598,6 +592,7 @@ function AdminApp() {
                 onDelete={(record) => deleteRecord('inquiries', record.id, record.name)}
               />
             )}
+            {section === 'analytics' && <VisitorDeviceAnalytics />}
             {section === 'social' && (
               <SocialSettings
                 links={records.socialLinks}

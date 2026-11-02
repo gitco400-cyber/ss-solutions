@@ -6,6 +6,20 @@ function Root() {
   const [adminRoute, setAdminRoute] = useState(window.location.hash.startsWith('#/admin'))
 
   useEffect(() => {
+    try {
+      for (const key of [
+        'ss-solutions-visitor-owner-token',
+        'ss-solutions-first-visit',
+        'ss-solutions-location-consent',
+      ]) {
+        window.localStorage.removeItem(key)
+      }
+    } catch {
+      return
+    }
+  }, [])
+
+  useEffect(() => {
     const handleHashChange = () => setAdminRoute(window.location.hash.startsWith('#/admin'))
     window.addEventListener('hashchange', handleHashChange)
     return () => window.removeEventListener('hashchange', handleHashChange)

@@ -16,8 +16,8 @@ import {
   ShieldCheck,
   Sparkles,
 } from 'lucide-react'
-import { motion, useReducedMotion } from 'motion/react'
 import { siteConfig } from './config/site.js'
+import AnalyticsConsent from './components/AnalyticsConsent.jsx'
 import Footer from './components/Footer.jsx'
 import Header from './components/Header.jsx'
 import ProjectCard from './components/ProjectCard.jsx'
@@ -25,7 +25,6 @@ import Reveal from './components/Reveal.jsx'
 import SectionHeading from './components/SectionHeading.jsx'
 import ServiceCard from './components/ServiceCard.jsx'
 import SocialLinks from './components/SocialLinks.jsx'
-import VisitorLocation from './components/VisitorLocation.jsx'
 import { getDefaultSocialLinks } from './lib/social.js'
 import { fetchPublicSiteData, subscribeToPublicSiteChanges } from './lib/publicSiteSync.js'
 import { isSupabaseConfigured, supabase } from './lib/supabase.js'
@@ -107,11 +106,6 @@ function ContactForm({ serviceList }) {
     const form = event.currentTarget
     const formData = new FormData(form)
 
-    if (formData.get('website')) {
-      setFormState('error')
-      return
-    }
-
     if (!isSupabaseConfigured || !supabase) {
       setFormState('unconfigured')
       return
@@ -119,14 +113,18 @@ function ContactForm({ serviceList }) {
 
     setFormState('submitting')
     try {
-      const { error } = await supabase.from('inquiries').insert({
-        name: formData.get('name'),
-        email: formData.get('email'),
-        phone: formData.get('phone') || null,
-        service: formData.get('service'),
-        message: formData.get('message'),
+      const { data, error } = await supabase.functions.invoke('contact-submit', {
+        body: {
+          name: formData.get('name'),
+          email: formData.get('email'),
+          phone: formData.get('phone') || null,
+          service: formData.get('service'),
+          message: formData.get('message'),
+          website: formData.get('website'),
+        },
       })
       if (error) throw error
+      if (!data?.ok) throw new Error('Contact submission was not accepted.')
       form.reset()
       setFormState('success')
     } catch {
@@ -203,7 +201,6 @@ function ScrollProgress() {
 }
 
 function App() {
-  const reduceMotion = useReducedMotion()
   const [publicServices, setPublicServices] = useState(() => services.map((service) => ({
     ...service,
     icon: serviceIcons[service.icon] ?? Code2,
@@ -375,24 +372,18 @@ function App() {
       <main id="main-content">
         <section className="hero section-wrap" id="home">
           <div className="hero-copy">
-            <Reveal>
-              <p className="eyebrow"><span className="status-dot" /> Digital ideas, thoughtfully delivered</p>
-              <h1>{content.hero_heading}</h1>
-              <p className="hero-description">{content.hero_description}</p>
-              <div className="hero-actions">
+            <div>
+              <p className="eyebrow hero-copy-reveal hero-copy-reveal-1"><span className="status-dot" /> Digital ideas, thoughtfully delivered</p>
+              <h1 className="hero-copy-reveal hero-copy-reveal-2">{content.hero_heading}</h1>
+              <p className="hero-description hero-copy-reveal hero-copy-reveal-3">{content.hero_description}</p>
+              <div className="hero-actions hero-copy-reveal hero-copy-reveal-4">
                 <a className="button button-primary" href="#contact">{content.cta_text} <ArrowUpRight size={17} aria-hidden="true" /></a>
                 <a className="button button-quiet" href="#services">Explore what we do <ArrowDown size={16} aria-hidden="true" /></a>
               </div>
-              <div className="hero-note"><span className="note-line" /> A thoughtful partner for your next digital step</div>
-            </Reveal>
+              <div className="hero-note hero-copy-reveal hero-copy-reveal-5"><span className="note-line" /> A thoughtful partner for your next digital step</div>
+            </div>
           </div>
-          <motion.div
-            className="hero-art"
-            initial={reduceMotion ? false : { opacity: 0, scale: 0.96, y: 20 }}
-            animate={reduceMotion ? undefined : { opacity: 1, scale: 1, y: 0 }}
-            transition={{ duration: 0.8, ease: [0.2, 0.7, 0.2, 1] }}
-            aria-hidden="true"
-          >
+          <div className="hero-art hero-art-reveal" aria-hidden="true">
             <div className="art-glow" />
             <div className="orbit orbit-one" />
             <div className="orbit orbit-two" />
@@ -407,7 +398,7 @@ function App() {
             </div>
             <div className="floating-label label-top"><span className="label-icon teal"><Code2 size={15} /></span><span>Digital solutions</span></div>
             <div className="floating-label label-bottom"><span className="label-icon orange"><Sparkles size={15} /></span><span>Made for what’s next</span></div>
-          </motion.div>
+          </div>
           <a className="hero-scroll" href="#about"><span>Scroll to discover</span><ArrowDown size={14} /></a>
         </section>
 
@@ -445,12 +436,12 @@ function App() {
         </section>
 
         <section className="why-section section-wrap section-space" id="why-us">
-          <div className="why-intro">
+          <Reveal className="why-intro">
             <span className="eyebrow">04 / Why SS Solutions</span>
             <h2>Big-picture thinking.<br /><span className="gradient-text">People-first delivery.</span></h2>
             <p>Good partnerships are built on more than technology. They’re built on trust, clarity, and a shared sense of what matters.</p>
             <a className="button button-outline" href="#contact">Let’s work together <ArrowUpRight size={16} /></a>
-          </div>
+          </Reveal>
           <div className="benefit-list">
             {benefits.map(({ icon: Icon, title, description }, index) => (
               <Reveal className="benefit-row" key={title} delay={index * 0.08}>
@@ -478,20 +469,22 @@ function App() {
 
         <section className="contact-section section-wrap section-space" id="contact">
           <div className="contact-panel">
-            <div className="contact-copy">
+            <Reveal className="contact-copy">
               <span className="eyebrow">06 / Get in touch</span>
               <h2>Have something in mind? <span className="gradient-text">Let’s talk.</span></h2>
               <p>Tell us what you’re working on, what’s getting in the way, or where you’d like to go next. We’ll take it from there.</p>
               <div className="contact-promise"><span className="status-dot" /> A real conversation. A thoughtful next step.</div>
               <SocialLinks className="contact-social-links" links={socialLinks} />
-            </div>
-            <ContactForm serviceList={publicServices} />
+            </Reveal>
+            <Reveal className="contact-form-reveal" delay={0.1}>
+              <ContactForm serviceList={publicServices} />
+            </Reveal>
           </div>
         </section>
       </main>
-      <Footer socialLinks={socialLinks} tagline={content.footer_tagline} />
+      <Footer analyticsEnabled={isSupabaseConfigured} socialLinks={socialLinks} tagline={content.footer_tagline} />
+      <AnalyticsConsent />
       {whatsapp && <SocialLinks className="floating-whatsapp" links={[whatsapp]} />}
-      <VisitorLocation />
     </>
   )
 }

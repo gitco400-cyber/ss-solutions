@@ -12,6 +12,7 @@ const navItems = [
 
 function Header() {
   const [menuOpen, setMenuOpen] = useState(false)
+  const [isScrolled, setIsScrolled] = useState(false)
   const [theme, setTheme] = useState(() => document.documentElement.dataset.theme === 'light' ? 'light' : 'dark')
   const [activeSection, setActiveSection] = useState('#about')
   const [logoPopup, setLogoPopup] = useState(null)
@@ -21,6 +22,13 @@ function Header() {
   const hoverTimerRef = useRef(null)
   const restoreFocusRef = useRef(false)
   const reduceMotion = useReducedMotion()
+
+  useEffect(() => {
+    const updateScrolledState = () => setIsScrolled(window.scrollY > 24)
+    updateScrolledState()
+    window.addEventListener('scroll', updateScrolledState, { passive: true })
+    return () => window.removeEventListener('scroll', updateScrolledState)
+  }, [])
 
   useEffect(() => {
     const sections = navItems
@@ -150,7 +158,7 @@ function Header() {
 
   return (
     <header className="site-header">
-      <div className="nav-shell">
+      <div className={`nav-shell${isScrolled ? ' is-scrolled' : ''}`}>
         <a
           aria-label={`${siteConfig.name} home; hover or activate to enlarge the logo`}
           className="brand"

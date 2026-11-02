@@ -121,6 +121,28 @@
 .admin-alert button { margin-left: auto; border: 0; color: inherit; background: transparent; cursor: pointer; font-size: 10px; text-decoration: underline; }
 .admin-loading { min-height: 100vh; display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--admin-muted); background: var(--admin-bg); font-size: 11px; }
 .admin-loading.inline { min-height: 200px; }
+.visitor-analytics-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 11px; }
+.visitor-analytics-stat,.visitor-analytics-card,.visitor-analytics-recent { min-width: 0; padding: 16px; border: 1px solid var(--admin-border); border-radius: 11px; background: linear-gradient(145deg, rgba(255,255,255,.035), rgba(255,255,255,.008)); }
+.visitor-analytics-stat { display: flex; flex-direction: column; gap: 11px; color: var(--admin-muted); font-size: 10px; }
+.visitor-analytics-stat strong { color: var(--admin-text); font-size: 25px; font-weight: 550; letter-spacing: -.04em; }
+.visitor-analytics-distributions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
+.visitor-analytics-card h3,.visitor-analytics-recent h3 { margin: 0; color: var(--admin-text); font-size: 12px; font-weight: 600; }
+.visitor-analytics-distribution { display: grid; gap: 13px; margin: 17px 0 0; padding: 0; list-style: none; }
+.visitor-analytics-distribution li { display: grid; gap: 7px; color: var(--admin-muted); font-size: 10px; }
+.visitor-analytics-distribution li > div { display: flex; justify-content: space-between; gap: 10px; }
+.visitor-analytics-distribution strong { color: var(--admin-text); font-size: 9px; font-weight: 550; white-space: nowrap; }
+.visitor-analytics-bar { display: block; height: 5px; overflow: hidden; border-radius: 99px; background: rgba(255,255,255,.08); }
+.visitor-analytics-bar i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #4bdbbd, #8ee8d5); }
+.visitor-analytics-muted,.visitor-analytics-empty p,.visitor-analytics-recent .admin-section-heading p { color: var(--admin-muted); font-size: 10px; line-height: 1.6; }
+.visitor-analytics-empty { display: grid; justify-items: center; gap: 8px; padding: 60px 20px; border: 1px dashed var(--admin-border); border-radius: 11px; color: var(--admin-teal); text-align: center; }
+.visitor-analytics-empty strong { color: var(--admin-text); font-size: 12px; }
+.visitor-analytics-empty p { max-width: 420px; margin: 0; }
+.visitor-analytics-recent { margin-top: 14px; }
+.visitor-analytics-recent .admin-section-heading { align-items: center; margin-bottom: 14px; }
+.visitor-analytics-recent .admin-section-heading p { margin: 5px 0 0; }
+.visitor-analytics-recent .admin-section-heading > span { color: var(--admin-subtle); font-size: 9px; }
+.visitor-analytics-pagination { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 13px; }
+.visitor-analytics-pagination > span { color: var(--admin-muted); font-size: 9px; }
 .admin-spin { animation: admin-spin 1s linear infinite; }
 @keyframes admin-spin { to { transform: rotate(360deg); } }
 .admin-login-screen,.admin-setup-screen { min-height: 100vh; display: grid; place-items: center; padding: 24px; color: var(--admin-text); background: radial-gradient(ellipse at 50% 0, rgba(75,219,189,.08), transparent 40%), var(--admin-bg); }
@@ -142,6 +164,7 @@
 @media (max-width: 1080px) {
   .admin-stat-grid { grid-template-columns: repeat(3, minmax(130px, 1fr)); }
   .admin-shell { grid-template-columns: 218px minmax(0, 1fr); }
+  .visitor-analytics-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 @media (max-width: 760px) {
@@ -164,6 +187,10 @@
   .admin-section-heading { align-items: flex-start; flex-direction: column; }
   .admin-section-heading .admin-primary-button { align-self: flex-start; }
   .admin-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .visitor-analytics-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .visitor-analytics-distributions { grid-template-columns: 1fr; }
+  .visitor-analytics-heading { gap: 10px; }
+  .visitor-analytics-heading .admin-secondary-button { flex-shrink: 0; }
   .admin-stat-card { min-height: 125px; padding: 13px; gap: 9px; }
   .admin-stat-card strong { font-size: 24px; }
   .admin-form-grid { grid-template-columns: 1fr; gap: 13px; }
